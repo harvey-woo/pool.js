@@ -1,6 +1,6 @@
 {
   "name": "@cat5th/pool.js",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "Represents a generic object pool for javascript",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
