@@ -10,24 +10,24 @@ interface Queued<F extends (...args: readonly any[]) => void> {
 function queue<F extends (...args: readonly any[]) => unknown = () => void>(
   ...fns: F[]
 ): Queued<F> {
-  const queue: F[] = [...fns];
+  const fnSet = new Set<F>(fns);
   function run(this: ThisParameterType<F>, ...args: Parameters<F>) {
-    const fn = queue.shift();
-    if (fn) {
-      fn.call(this, ...args);
-    }
+    // biome-ignore lint/complexity/noForEach: <explanation>
+    fnSet.forEach((fn) => {
+      fn.apply(this, args);
+    });
   }
   function add(...fns: F[]) {
-    queue.push(...fns);
+    // biome-ignore lint/complexity/noForEach: <explanation>
+    fns.forEach((fn) => {
+      fnSet.add(fn);
+    });
   }
   function clear() {
-    queue.length = 0;
+    fnSet.clear();
   }
   function remove(fn: F) {
-    const index = queue.indexOf(fn);
-    if (index >= 0) {
-      queue.splice(index, 1);
-    }
+    fnSet.delete(fn);
   }
   return Object.assign(run, {
     add,

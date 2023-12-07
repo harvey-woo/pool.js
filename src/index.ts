@@ -1,9 +1,9 @@
-export type {
-  AllCreatePoolOptions,
-  CreateLimiterOptions,
-  Limiter,
+export {
+  type AllCreatePoolOptions,
+  type CreateLimiterOptions,
+  type Limiter,
   Pool,
   default,
-} from "./pool";
+} from './pool';
 
-export { pLimit } from "./p-limit";
+export { pLimit } from './p-limit';

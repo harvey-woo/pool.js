@@ -1,7 +1,14 @@
-import queue from "./utils/queue";
-import wait from "./utils/wait";
+import queue from './utils/queue';
+import wait from './utils/wait';
 
-export type CreatePoolOptionsCreate<T> = (
+// biome-ignore lint/suspicious/noEmptyInterface: <explanation>
+export interface Resource {
+  // mybe we can use this in the future
+  // [Symbol.dispose]?: () => void;
+  // [Symbol.asyncDispose]?: () => Promise<void>;
+}
+
+export type CreatePoolOptionsCreate<T extends Resource & object = Resource> = (
   createdCount: number,
 ) => T | undefined;
 
@@ -15,7 +22,7 @@ export interface CreateLimiterOptions {
 /**
  * Options for creating a new `Pool` instance.
  */
-export interface CreatePoolOptions<T = number> {
+export interface CreatePoolOptions<T extends Resource & object = Resource> {
   /**
    * A function that creates a new resource.
    * @param createdCount The number of resources that have been created so far.
@@ -32,35 +39,40 @@ export interface CreatePoolOptions<T = number> {
   initialSize?: number;
 }
 
-export type AllCreatePoolOptions<T> =
+export type AllCreatePoolOptions<T extends Resource & object = Resource> =
   | CreatePoolOptions<T>
   | CreatePoolOptionsCreate<T>
   | number;
 
-export interface Limiter<T> {
+export interface Limiter<T extends Resource & object = Resource> {
   <Args extends readonly unknown[], R>(
     fn: (this: T, ...args: Args) => R,
     ...args: Args
   ): Promise<R>;
 }
 
+function createDefaultResource() {
+  return Object.create(null);
+}
+
 const defaultOptions = {
-  create: (i: number) => i,
+  create: (i: number) => createDefaultResource(),
   reset: () => {},
   initialSize: 0,
-} satisfies CreatePoolOptions<number>;
+} satisfies CreatePoolOptions;
 
-function normalizeOptions<T = number>(
+function normalizeOptions<T extends Resource & object = Resource>(
   options?: AllCreatePoolOptions<T>,
 ): Required<CreatePoolOptions<T>> {
-  if (typeof options === "number") {
+  if (typeof options === 'number') {
     const numbericOptions = options;
     return {
       ...defaultOptions,
-      create: (i: number) => (i < numbericOptions ? (i as T) : undefined),
+      create: (i: number) =>
+        i < numbericOptions ? (createDefaultResource() as T) : undefined,
     };
   }
-  if (typeof options === "function") {
+  if (typeof options === 'function') {
     return {
       ...defaultOptions,
       create: options,
@@ -77,7 +89,7 @@ function normalizeOptions<T = number>(
  * Represents a generic object pool.
  * @template T The type of objects in the pool.
  */
-export class Pool<T = number> {
+export class Pool<T extends Resource & object = Resource> {
   // events handling, can be replaced with EventEmitter
 
   #handlers = {
@@ -90,7 +102,7 @@ export class Pool<T = number> {
    * @param evt event name, should be 'acquire' or 'release'
    * @param fn handler
    */
-  on(evt: "acquire" | "release", fn: (item: T) => void) {
+  on(evt: 'acquire' | 'release', fn: (item: T) => void) {
     this.#handlers[evt].add(fn);
   }
 
@@ -99,11 +111,15 @@ export class Pool<T = number> {
    * @param evt event name, should be 'acquire' or 'release'
    * @param fn handler
    */
-  off(evt: "acquire" | "release", fn: (item: T) => void) {
+  off(evt: 'acquire' | 'release', fn?: (item: T) => void) {
+    if (fn === undefined) {
+      this.#handlers[evt].clear();
+      return;
+    }
     this.#handlers[evt].remove(fn);
   }
 
-  #emit(evt: "acquire" | "release", item: T) {
+  #emit(evt: 'acquire' | 'release', item: T) {
     this.#handlers[evt](item);
   }
 
@@ -117,31 +133,52 @@ export class Pool<T = number> {
     const { create, reset, initialSize } = normalizeOptions(options);
     this.#create = create;
     this.#reset = reset;
-    for (let i = 0; i < initialSize; i++) {
-      const item = create(i);
+    this.create(initialSize);
+  }
+
+  /**
+   * create resources
+   * @param size size of resources to create
+   */
+  create(size: number) {
+    for (let i = 0; i < size; i++) {
+      const item = this.#create(i);
       if (item !== undefined) {
-        this.#pool.add(item);
+        this.#resources.add(item);
       } else {
-        break;
+        throw new Error(
+          'Pool: create resource failed, undefined returned from create function',
+        );
       }
     }
   }
 
-  #pool: Set<T> = new Set<T>();
-  #active: Set<T> = new Set<T>();
+  #resources: Set<T> = new Set<T>();
+
+  #inUse: Set<T> = new Set<T>();
 
   /** exsiting resource size, excluding the ones not created yet */
+  get totalSize() {
+    return this.#inUse.size + this.#resources.size;
+  }
+
+  /** get inUse resource size */
+  get inUseSize() {
+    return this.#inUse.size;
+  }
+
+  /** get available resource size */
   get size() {
-    return this.#active.size + this.#pool.size;
+    return this.#resources.size;
   }
 
   #untilRelease() {
     return new Promise<void>((resolve) => {
       const releaseListener = (item: T) => {
-        this.off("release", releaseListener);
+        this.off('release', releaseListener);
         resolve();
       };
-      this.on("release", releaseListener);
+      this.on('release', releaseListener);
     });
   }
 
@@ -153,17 +190,17 @@ export class Pool<T = number> {
   acquire(wait?: false): T | undefined;
   acquire(wait: true): Promise<T>;
   acquire(wait?: boolean): Promise<T> | T | undefined {
-    if (this.#pool.size) {
-      const item = this.#pool.values().next().value;
-      this.#pool.delete(item);
-      this.#active.add(item);
-      this.#emit("acquire", item);
+    if (this.#resources.size) {
+      const item = this.#resources.values().next().value;
+      this.#resources.delete(item);
+      this.#inUse.add(item);
+      this.#emit('acquire', item);
       return item;
     }
-    const createdItem = this.#create(this.size);
+    const createdItem = this.#create(this.totalSize);
     if (createdItem !== undefined) {
-      this.#active.add(createdItem);
-      this.#emit("acquire", createdItem);
+      this.#inUse.add(createdItem);
+      this.#emit('acquire', createdItem);
       return createdItem;
     }
 
@@ -180,21 +217,21 @@ export class Pool<T = number> {
    * @param item The resource to release.
    */
   release(item: T) {
-    if (this.#active.has(item)) {
-      this.#active.delete(item);
+    if (this.#inUse.has(item)) {
+      this.#inUse.delete(item);
       if (this.#reset) {
         this.#reset(item);
       }
-      this.#emit("release", item);
-      this.#pool.add(item);
+      this.#emit('release', item);
+      this.#resources.add(item);
     }
   }
   /**
    * Clears the pool.
    */
   clear() {
-    this.#active.clear();
-    this.#pool.clear();
+    this.#inUse.clear();
+    this.#resources.clear();
   }
 
   /**
@@ -202,7 +239,7 @@ export class Pool<T = number> {
    * @param items An array of items to initialize the pool with.
    * @param reset An optional function that is called on each item when it is released.
    */
-  static from<T>(
+  static from<T extends Resource & object>(
     items: T[],
     {
       reset,
@@ -213,6 +250,7 @@ export class Pool<T = number> {
     return new Pool<T>({
       create: (i) => items[i],
       reset,
+      initialSize: items.length,
     });
   }
 
@@ -226,6 +264,8 @@ export class Pool<T = number> {
     return async function limited(fn, ...args) {
       // biome-ignore lint/suspicious/noAsyncPromiseExecutor: <explanation>
       return new Promise(async (resolve, reject) => {
+        // mybe we can use this in the future
+        // await using ctx = await pool.acquire(true);
         const ctx = await pool.acquire(true);
         try {
           const start = Date.now();
@@ -250,7 +290,7 @@ export class Pool<T = number> {
    * @param minDuration the minimum duration of the execution of the function
    * @returns
    */
-  static limit<T = number>(
+  static limit<T extends Resource & object = Resource>(
     options: AllCreatePoolOptions<T>,
     { minDuration = 0 }: CreateLimiterOptions = {},
   ): Limiter<T> {
@@ -262,4 +302,3 @@ export class Pool<T = number> {
 }
 
 export default Pool;
-
