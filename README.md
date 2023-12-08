@@ -186,6 +186,9 @@ const limiter = pool.limit({
   minDuration: 1000,
 });
 
+// limiter has a `abort` method that can abort the current consumption function, the return of execution will throw an error
+limiter.abort(new DOMException('AbortError'));
+
 ```
 
 ### pLimit / Pool.limit / limit

@@ -189,6 +189,9 @@ const limiter = pool.limit({
   minDuration: 1000,
 });
 
+// 资源限制器提供了一个 `abort` 方法，可以中断当前的消费函数，使执行返回会抛出错误
+limiter.abort(new DOMException('AbortError'));
+
 ```
 
 ### pLimit / Pool.limit
