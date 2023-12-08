@@ -95,11 +95,29 @@ describe('Pool', () => {
     expect(fn).toHaveBeenCalledTimes(5);
   });
 
-  it('should create a pool from an existing array', () => {
-    const items = [1, 2, 3];
+  it('should reset call when release', async () => {
     const resetFn = jest.fn();
+    const pool = new Pool({
+      create: (i) => (i >= 3 ? undefined : { value: i }),
+      reset: resetFn,
+      initialSize: 3,
+    });
+    const resource1 = pool.acquire();
+    const resource2 = pool.acquire();
+    const resource3 = pool.acquire();
+    // biome-ignore lint/style/noNonNullAssertion: <explanation>
+    pool.release(resource1!);
+    // biome-ignore lint/style/noNonNullAssertion: <explanation>
+    pool.release(resource2!);
+    // biome-ignore lint/style/noNonNullAssertion: <explanation>
+    pool.release(resource3!);
+    expect(resetFn).toHaveBeenCalledTimes(3);
+  });
 
-    const poolFromItems = Pool.from(items, { reset: resetFn });
+  it('should create a pool from an existing array', async () => {
+    const items = [1, 2, 3];
+
+    const poolFromItems = Pool.from(items.map((i) => ({ value: i })));
 
     expect(poolFromItems.size).toBe(3);
 
@@ -107,18 +125,9 @@ describe('Pool', () => {
     const resource2 = poolFromItems.acquire();
     const resource3 = poolFromItems.acquire();
 
-    expect(resource1).toBe(1);
-    expect(resource2).toBe(2);
-    expect(resource3).toBe(3);
-
-    // biome-ignore lint/style/noNonNullAssertion: <explanation>
-    poolFromItems.release(resource1!);
-    // biome-ignore lint/style/noNonNullAssertion: <explanation>
-    poolFromItems.release(resource2!);
-    // biome-ignore lint/style/noNonNullAssertion: <explanation>
-    poolFromItems.release(resource3!);
-
-    expect(resetFn).toHaveBeenCalledTimes(3);
+    expect(resource1).toEqual({ value: 1 });
+    expect(resource2).toEqual({ value: 2 });
+    expect(resource3).toEqual({ value: 3 });
   });
 
   it('should create a pool without create function', () => {
@@ -257,5 +266,26 @@ describe('Pool', () => {
     expect(result).toBeInstanceOf(Promise);
     await result;
     expect(fn).toHaveBeenCalledTimes(1);
+  });
+
+  it('limiter.abort should work', async () => {
+    const pool = new Pool({
+      create: (i) => (i >= 3 ? undefined : { value: i }),
+      reset: (item) => {},
+      initialSize: 3,
+    });
+    pool.acquire();
+    pool.acquire();
+    const resource1 = pool.acquire();
+    const limiter = pool.limit();
+    const fn = jest.fn(async () => {
+      await wait(100);
+    });
+    const result = limiter(fn);
+    limiter.abort();
+    // biome-ignore lint/style/noNonNullAssertion: <explanation>
+    pool.release(resource1!);
+    await expect(result).rejects.toThrow('user abort');
+    expect(fn).toHaveBeenCalledTimes(0);
   });
 });

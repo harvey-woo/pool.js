@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // 一个TimeLine的组件，用于展示一个时间线，包括时间线的名字，时间线中的事件，以及时间线的描述
+// A TimeLine component, used to display a timeline, including the name of the timeline, the events in the timeline, and the description of the timeline
 
-import { defineProps, type PropType, computed } from 'vue';
+import { type PropType } from 'vue';
 
 interface TimeLineEvent {
     from: number;
@@ -14,26 +15,31 @@ interface TimeLineEvent {
 
 defineProps({
     // 时间线的名字
+    // The name of the timeline
     name: {
         type: String,
         required: true,
     },
     // 时间线的描述
+    // The description of the timeline
     events: {
         type: Array as PropType<TimeLineEvent[]>,
         default: () => [],
     },
     // 时间线的开始时间
+    // The start time of the timeline
     from: {
         type: Number,
         default: 0,
     },
     // 时间线的结束时间
+    // The end time of the timeline
     to: {
         type: Number,
         default: 100,
     },
     // 单位时间的像素宽度
+    // The pixel width of a unit time
     unitWidth: {
         type: Number,
         default: 10,

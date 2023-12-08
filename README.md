@@ -6,7 +6,7 @@
 [![coverage](https://img.shields.io/codecov/c/github/harvey-woo/pool.js.svg?style=flat-square)](https://codecov.io/gh/harvey-woo/pool.js)
 [![Build Status](https://github.com/harvey-woo/pool.js/actions/workflows/npm-publish.yml/badge.svg)](https://github.com/harvey-woo/pool.js/actions/workflows/npm-publish.yml)
 
-![example](./example.png)
+![example](./example.gif)
 
 This is an abstract resource pool utility library based on the resource pool pattern, JavaScript, and TypeScript friendly.
 It helps you quickly build a resource pool and manage it.
@@ -88,7 +88,7 @@ for (let i = 0; i < 100; i++) {
 
 Please see [example](./example)
 
-![example](./example.png)
+![example](./example.gif)
 
 ## Documentation
 

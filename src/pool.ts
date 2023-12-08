@@ -1,5 +1,6 @@
 import queue from './utils/queue';
 import wait from './utils/wait';
+import withResolvers from './utils/with-resolvers';
 
 // biome-ignore lint/suspicious/noEmptyInterface: <explanation>
 export interface Resource {
@@ -17,6 +18,7 @@ export interface CreateLimiterOptions {
    * The minimum duration of the execution of the function.
    */
   minDuration?: number;
+  abortError?: unknown;
 }
 
 /**
@@ -49,6 +51,7 @@ export interface Limiter<T extends Resource & object = Resource> {
     fn: (this: T, ...args: Args) => R,
     ...args: Args
   ): Promise<R>;
+  abort(reason?: unknown): void;
 }
 
 function createDefaultResource() {
@@ -259,29 +262,51 @@ export class Pool<T extends Resource & object = Resource> {
    * @param minDuration the minimum duration of the execution of the function
    * @returns a limiter function
    */
-  limit({ minDuration = 0 }: CreateLimiterOptions = {}): Limiter<T> {
+  limit({
+    minDuration = 0,
+    abortError = new Error('user abort'),
+  }: CreateLimiterOptions = {}): Limiter<T> {
     const pool = this;
-    return async function limited(fn, ...args) {
-      // biome-ignore lint/suspicious/noAsyncPromiseExecutor: <explanation>
-      return new Promise(async (resolve, reject) => {
-        // mybe we can use this in the future
-        // await using ctx = await pool.acquire(true);
-        const ctx = await pool.acquire(true);
-        try {
-          const start = Date.now();
-          const result = await fn.call(ctx, ...args);
-          resolve(result);
-          const duration = Date.now() - start;
-          if (duration < minDuration) {
-            await wait(minDuration - duration);
+    const aborts = new Set<(reason: unknown) => void>();
+    return Object.assign(
+      async function limited(fn, ...args) {
+        const resolvers = withResolvers<T>();
+        const abort = (reason: unknown) => {
+          resolvers.reject(reason);
+        };
+        aborts.add(abort);
+        // biome-ignore lint/suspicious/noAsyncPromiseExecutor: <explanation>
+        return new Promise(async (resolve, reject) => {
+          // mybe we can use this in the future
+          // await using ctx = await pool.acquire(true);
+          let ctx: T | undefined;
+          try {
+            ctx = await Promise.race([pool.acquire(true), resolvers.promise]);
+            const start = Date.now();
+            const result = await fn.call(ctx, ...args);
+            resolve(result);
+            const duration = Date.now() - start;
+            if (duration < minDuration) {
+              await wait(minDuration - duration);
+            }
+          } catch (e) {
+            reject(e);
+          } finally {
+            if (ctx) {
+              pool.release(ctx);
+            }
+            aborts.delete(abort);
           }
-        } catch (e) {
-          reject(e);
-        } finally {
-          pool.release(ctx);
-        }
-      });
-    };
+        });
+      },
+      {
+        abort(abortedReason: unknown = abortError) {
+          for (const abort of aborts.values()) {
+            abort(abortedReason);
+          }
+        },
+      },
+    ) as Limiter<T>;
   }
 
   /**
@@ -292,7 +317,7 @@ export class Pool<T extends Resource & object = Resource> {
    */
   static limit<T extends Resource & object = Resource>(
     options: AllCreatePoolOptions<T> | Pool<T>,
-    limiterOptions: CreateLimiterOptions = {},
+    limiterOptions?: CreateLimiterOptions,
   ): Limiter<T> {
     const pool: Pool<T> = options instanceof Pool ? options : new Pool(options);
     return pool.limit(limiterOptions);
