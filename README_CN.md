@@ -4,7 +4,7 @@
 [![npm version](https://img.shields.io/npm/l/@cat5th/pool.js.svg?style=flat-square)](https://www.npmjs.com/package/@cat5th/pool.js)
 [![npm downloads](https://img.shields.io/npm/dt/@cat5th/pool.js.svg?style=flat-square)](https://www.npmjs.com/package/@cat5th/pool.js)
 [![coverage](https://img.shields.io/codecov/c/github/harvey-woo/pool.js.svg?style=flat-square)](https://codecov.io/gh/harvey-woo/pool.js)
-[![Build Status](https://img.shields.io/travis/harvey-woo/pool.js.svg?style=flat-square)](https://travis-ci.org/harvey-woo/pool.js)
+[![Build Status](https://github.com/harvey-woo/pool.js/actions/workflows/npm-publish.yml/badge.svg)](https://github.com/harvey-woo/pool.js/actions/workflows/npm-publish.yml)
 
 
 这个一个基于资源池模式、Javascript, Typescript友好的抽象资源池工具库。
