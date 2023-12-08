@@ -12,8 +12,9 @@
 能够帮助你快速构建一个资源池，以及对资源池进行管理。
 
 
-- [中文](./README_CN.md)
-- [English](./README.md)
+- [中文文档](./README_CN.md)
+  - [优雅完成高频面试题《请求并发数控制》](https://juejin.cn/post/7310009007921791003)
+- [English README](./README.md)
 
 
 ## 特性

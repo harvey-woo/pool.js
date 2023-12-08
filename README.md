@@ -12,8 +12,9 @@ This is an abstract resource pool utility library based on the resource pool pat
 It helps you quickly build a resource pool and manage it.
 
 
-- [中文](./README_CN.md)
-- [English](./README.md)
+- [中文文档](./README_CN.md)
+  - [优雅完成高频面试题《请求并发数控制》](https://juejin.cn/post/7310009007921791003)
+- [English README](./README.md)
 
 
 ## Features
