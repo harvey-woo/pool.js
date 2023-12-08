@@ -30,7 +30,11 @@ jobs:
         with:
           node-version: 20
           registry-url: https://registry.npmjs.org/
+      - uses: codecov/codecov-action@v3
+        with:
+          token: ${{secrets.CODECOV_TOKEN}}
+          files: coverage/clover.xml
       - run: yarn install --frozen-lockfile
       - run: npm publish
         env:
-          NODE_AUTH_TOKEN: ${{secrets.npm_token}}
+          NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
