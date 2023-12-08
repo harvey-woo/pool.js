@@ -6,6 +6,7 @@
 [![coverage](https://img.shields.io/codecov/c/github/harvey-woo/pool.js.svg?style=flat-square)](https://codecov.io/gh/harvey-woo/pool.js)
 [![Build Status](https://github.com/harvey-woo/pool.js/actions/workflows/npm-publish.yml/badge.svg)](https://github.com/harvey-woo/pool.js/actions/workflows/npm-publish.yml)
 
+![example](./example.png)
 
 This is an abstract resource pool utility library based on the resource pool pattern, JavaScript, and TypeScript friendly.
 It helps you quickly build a resource pool and manage it.
@@ -24,6 +25,18 @@ Supports the following features:
 - [x] Listening to resource pool events
 - [x] Listening to resource events
 - [x] Asynchronous scheduling of resources
+
+
+## Installation
+
+```bash
+npm install @cat5th/pool.js
+```
+or yarn
+
+```bash
+yarn add @cat5th/pool.js
+```
 
 
 ## Try it out
@@ -70,6 +83,12 @@ for (let i = 0; i < 100; i++) {
   request();
 }
 ```
+
+## 例子
+
+Please see [example](./example)
+
+![example](./example.png)
 
 ## Documentation
 

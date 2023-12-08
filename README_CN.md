@@ -6,6 +6,7 @@
 [![coverage](https://img.shields.io/codecov/c/github/harvey-woo/pool.js.svg?style=flat-square)](https://codecov.io/gh/harvey-woo/pool.js)
 [![Build Status](https://github.com/harvey-woo/pool.js/actions/workflows/npm-publish.yml/badge.svg)](https://github.com/harvey-woo/pool.js/actions/workflows/npm-publish.yml)
 
+![example](./example.png)
 
 这个一个基于资源池模式、Javascript, Typescript友好的抽象资源池工具库。
 能够帮助你快速构建一个资源池，以及对资源池进行管理。
@@ -83,6 +84,12 @@ for (let i = 0; i < 100; i++) {
   request();
 }
 ```
+
+## 例子
+
+请查看 [example](./example) 目录下的例子
+
+![example](./example.png)
 
 
 ## 文档

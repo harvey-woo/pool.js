@@ -34,7 +34,9 @@
     "object-pooling",
     "object-pool.js",
     "object-pooljs",
-    "object-pool-js"
+    "object-pool-js",
+    "p-limit",
+    "pLimit"
   ],
   "author": "Harvey Woo",
   "license": "MIT",
