@@ -84,7 +84,7 @@ for (let i = 0; i < 100; i++) {
 }
 ```
 
-## 例子
+## Example
 
 Please see [example](./example)
 
