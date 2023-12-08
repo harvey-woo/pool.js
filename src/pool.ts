@@ -287,17 +287,15 @@ export class Pool<T extends Resource & object = Resource> {
   /**
    * create a pool and a limiter function, which will limit the concurrent execution of the function, passing the pool resource as the `this` context
    * @param options the options for creating the pool
-   * @param minDuration the minimum duration of the execution of the function
+   * @param limiterOptions the options for creating the limiter
    * @returns
    */
   static limit<T extends Resource & object = Resource>(
-    options: AllCreatePoolOptions<T>,
-    { minDuration = 0 }: CreateLimiterOptions = {},
+    options: AllCreatePoolOptions<T> | Pool<T>,
+    limiterOptions: CreateLimiterOptions = {},
   ): Limiter<T> {
-    const pool = new Pool<T>(options);
-    return pool.limit({
-      minDuration,
-    });
+    const pool: Pool<T> = options instanceof Pool ? options : new Pool(options);
+    return pool.limit(limiterOptions);
   }
 }
 

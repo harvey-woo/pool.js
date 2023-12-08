@@ -7,3 +7,4 @@ export {
 } from './pool';
 
 export { pLimit } from './p-limit';
+export { limit } from './limit';

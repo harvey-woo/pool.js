@@ -1,4 +1,4 @@
-import { Pool, pLimit } from './index';
+import { Pool, limit, pLimit } from './index';
 import wait from './utils/wait';
 
 describe('Pool', () => {
@@ -204,13 +204,13 @@ describe('Pool', () => {
   });
 
   it('shortcuts should work', async () => {
-    const limited = pLimit(2, {
+    const limiter = pLimit(2, {
       minDuration: 100,
     });
     const fn = jest.fn(async () => {
       await wait(200);
     });
-    [1, 2, 3, 4].map(() => limited(fn));
+    [1, 2, 3, 4].map(() => limiter(fn));
     await wait(20);
     expect(fn).toHaveBeenCalledTimes(2);
     await wait(200);
@@ -246,5 +246,16 @@ describe('Pool', () => {
     pool.off('acquire');
     pool.acquire();
     expect(onAcquire).toHaveBeenCalledTimes(3);
+  });
+
+  it('limit wrapper should work', async () => {
+    const fn = jest.fn(async () => {
+      await wait(100);
+    });
+    const limited = limit(fn, pool, { minDuration: 100 });
+    const result = limited();
+    expect(result).toBeInstanceOf(Promise);
+    await result;
+    expect(fn).toHaveBeenCalledTimes(1);
   });
 });

@@ -9,7 +9,7 @@ import {
 /** a shorthand for `Pool.limit` */
 export const pLimit: <T extends Resource & object = Resource>(
   options: AllCreatePoolOptions<T>,
-  limitterOptions: CreateLimiterOptions,
+  limiterOptions: CreateLimiterOptions,
 ) => Limiter<T> = Pool.limit.bind(Pool);
 
 export default pLimit;

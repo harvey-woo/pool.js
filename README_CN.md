@@ -60,8 +60,8 @@ const workerPool = new Pool((created) => {
   return worker;
 });
 
-const limitter = workerPool.limit();
-limitter(function() {
+const limiter = workerPool.limit();
+limiter(function() {
   // this === worker
   this.postMessage('hello');
 });
@@ -70,16 +70,13 @@ limitter(function() {
 限制请求频率为每秒最多10次
 
 ```javascript
-import { pLimit } from '@cat5th/pool.js';
-const limitter = pLimit(10, {
-  minDuration: 1000,
-});
+import { limit } from '@cat5th/pool.js';
 
-function request() {
-  return limitter(async function() {
-    const response = await fetch('https://api.github.com');
-    return response.json();
-  });
+const request = limit(function() {
+  const response = await fetch('https://api.github.com');
+  return response.json();
+}, 10, {
+  minDuration: 1000,
 });
 
 for (let i = 0; i < 100; i++) {
@@ -166,12 +163,12 @@ pool.on('release', (resource) => {
 ### 资源调度限制器
 
 ```javascript
-const limitter = pool.limit();
+const limiter = pool.limit();
 
 // 资源限制器是一个执行函数，需要传入一个异步的消费函数，以及它的参数
 // 限制器会返回一个 `Promise`，当资源池中有资源时，会执行消费函数
 // 当资源池中没有资源时，会等待资源池中有资源时才执行消费函数
-const result = await limitter(async function(...args) {
+const result = await limiter(async function(...args) {
   console.log(`当前资源为 ${this.id}`);
   // resource.id === 0
   // args === [1, 2, 3]
@@ -179,7 +176,7 @@ const result = await limitter(async function(...args) {
 }, 1, 2, 3);
 
 // limit 方法支持传入限制器参数
-const limitter = pool.limit({
+const limiter = pool.limit({
   // 消费函数最少执行时间，如果消费函数执行时间小于 `minDuration`，
   // 执行会随着消费函数同时结束，但使用的资源会在 `minDuration`` 后释放
   minDuration: 1000,
@@ -195,10 +192,21 @@ const limitter = pool.limit({
 import { pLimit } from '@cat5th/pool.js';
 
 // `pLimit`的第一参数为`Pool`构造器的参数，第二个参数为`Pool.prototype.limit`的参数
-const limitter = pLimit(10, {
+const limiter = pLimit(10, {
   minDuration: 1000,
 });
+```
 
+`limit` 方法是 `Pool.limit` 的一个包装器，它直接返回一个可执行的函数
+
+```javascript
+import { limit } from '@cat5th/pool.js';
+const fn = limit(async function() {
+  // ...
+}, 10, {
+  minDuration: 1000,
+});
+fn(...args);
 ```
 
 ## 感谢

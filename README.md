@@ -48,8 +48,8 @@ const workerPool = new Pool((created) => {
   return worker;
 });
 
-const limitter = workerPool.limit();
-limitter(function() {
+const limiter = workerPool.limit();
+limiter(function() {
   // this === worker
   this.postMessage('hello');
 });
@@ -57,16 +57,13 @@ limitter(function() {
 
 Limit the request rate to a maximum of 10 times per second.
 ```javascript
-import { pLimit } from '@cat5th/pool.js';
-const limitter = pLimit(10, {
-  minDuration: 1000,
-});
+import { limit } from '@cat5th/pool.js';
 
-function request() {
-  return limitter(async function() {
-    const response = await fetch('https://api.github.com');
-    return response.json();
-  });
+const request = limit(function() {
+  const response = await fetch('https://api.github.com');
+  return response.json();
+}, 10, {
+  minDuration: 1000,
 });
 
 for (let i = 0; i < 100; i++) {
@@ -148,23 +145,23 @@ pool.on('release', (resource) => {
 
 ```
 
-### Resource limitter
+### Resource limiter
 
 ```javascript
-const limitter = pool.limit();
+const limiter = pool.limit();
 
-// Resource limitter is an execution function that needs to pass in an asynchronous consumption function and its parameters
-// The limitter returns a `Promise`, which will execute the consumption function when there are resources in the resource pool
+// Resource limiter is an execution function that needs to pass in an asynchronous consumption function and its parameters
+// The limiter returns a `Promise`, which will execute the consumption function when there are resources in the resource pool
 // When there are no resources in the resource pool, the consumption function will be executed when there are resources in the resource pool
-const result = await limitter(async function(...args) {
+const result = await limiter(async function(...args) {
   console.log(`Current resource is ${this.id}`)
   // resource.id === 0
   // args === [1, 2, 3]
   return 1;
 }, 1, 2, 3);
 
-// limitter method supports passing in limitter options
-const limitter = pool.limit({
+// limiter method supports passing in limiter options
+const limiter = pool.limit({
   // The minimum execution time of the consumption function, if the execution time of the consumption function is less than `minDuration`,
   // The execution will end at the same time as the consumption function, but the used resources will be released after `minDuration`
   minDuration: 1000,
@@ -172,7 +169,7 @@ const limitter = pool.limit({
 
 ```
 
-### pLimit / Pool.limit
+### pLimit / Pool.limit / limit
 
 Yes, `cat5th/pool.js` provides a convenient method called `pLimit` and `Pool.limit`, which is an alias for `Pool.prototype.limit`.
 
@@ -180,10 +177,22 @@ Yes, `cat5th/pool.js` provides a convenient method called `pLimit` and `Pool.lim
 import { pLimit } from '@cat5th/pool.js';
 
 // The first argument of `pLimit` is the parameter for the `Pool` constructor, and the second argument is the parameter for `Pool.prototype.limit`
-const limitter = pLimit(10, {
+const limiter = pLimit(10, {
   minDuration: 1000,
 });
 
+```
+
+`limit` is a wrapper method for `Pool.limit`, which is directly return a function that can be executed.
+
+```javascript
+import { limit } from '@cat5th/pool.js';
+const fn = limit(async function() {
+  // ...
+}, 10, {
+  minDuration: 1000,
+});
+fn(...args);
 ```
 
 ## Thanks
