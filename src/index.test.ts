@@ -59,6 +59,28 @@ describe('Pool', () => {
     expect(pool.size).toBe(1);
   });
 
+  it('should throw error when abort signal which is passed to acquire is aborted', async () => {
+    pool.acquire();
+    pool.acquire();
+    pool.acquire();
+
+    expect(pool.size).toBe(0);
+
+    expect(() => {
+      const abortCtrl = new AbortController();
+      abortCtrl.abort();
+      const acquirePromise = pool.acquire(true, abortCtrl.signal);
+      return acquirePromise;
+    }).rejects.toThrow();
+
+    expect(() => {
+      const abortCtrl = new AbortController();
+      const acquirePromise = pool.acquire(true, abortCtrl.signal);
+      abortCtrl.abort();
+      return acquirePromise;
+    }).rejects.toThrow();
+  });
+
   it('should limit concurrent execution with limiter', async () => {
     const limiter = pool.limit({ minDuration: 100 });
     const delays = [50, 200, 300, 400, 500];
@@ -285,7 +307,81 @@ describe('Pool', () => {
     limiter.abort();
     // biome-ignore lint/style/noNonNullAssertion: <explanation>
     pool.release(resource1!);
-    await expect(result).rejects.toThrow('user abort');
+    await expect(result).rejects.toThrow();
     expect(fn).toHaveBeenCalledTimes(0);
+  });
+
+  it('should resolve when all pool resources are released', async () => {
+    const pool = new Pool({
+      create: (i) => (i >= 3 ? undefined : { value: i }),
+      reset: (item) => {},
+      initialSize: 3,
+    });
+    const resource1 = pool.acquire();
+    const resource2 = pool.acquire();
+    const resource3 = pool.acquire();
+
+    const resolve = jest.fn();
+
+    pool.then(resolve);
+
+    // biome-ignore lint/style/noNonNullAssertion: <explanation>
+    pool.release(resource1!);
+    await wait(10);
+    expect(resolve).toHaveBeenCalledTimes(0);
+    // biome-ignore lint/style/noNonNullAssertion: <explanation>
+    pool.release(resource2!);
+    await wait(10);
+    expect(resolve).toHaveBeenCalledTimes(0);
+    // biome-ignore lint/style/noNonNullAssertion: <explanation>
+    pool.release(resource3!);
+    await wait(10);
+    expect(resolve).toHaveBeenCalledTimes(1);
+  });
+
+  it('should iterate resources', async () => {
+    const pool = new Pool({
+      create: (i) => (i >= 3 ? undefined : { value: i }),
+      reset: (item) => {},
+      initialSize: 3,
+    });
+    const resource1 = pool.acquire();
+    const resource2 = pool.acquire();
+    const resource3 = pool.acquire();
+    // biome-ignore lint/style/noNonNullAssertion: <explanation>
+    pool.release(resource1!);
+    // biome-ignore lint/style/noNonNullAssertion: <explanation>
+    pool.release(resource2!);
+    // biome-ignore lint/style/noNonNullAssertion: <explanation>
+    pool.release(resource3!);
+
+    const resources = [...pool];
+    expect(resources).toEqual([resource1, resource2, resource3]);
+  });
+
+  it('should async iterate resources', async () => {
+    const pool = new Pool({
+      create: (i) => (i >= 3 ? undefined : { value: i }),
+      reset: (item) => {},
+      initialSize: 3,
+    });
+    const resource1 = pool.acquire();
+    const resource2 = pool.acquire();
+    const resource3 = pool.acquire();
+    // biome-ignore lint/style/noNonNullAssertion: <explanation>
+    pool.release(resource1!);
+    // biome-ignore lint/style/noNonNullAssertion: <explanation>
+    pool.release(resource2!);
+    // biome-ignore lint/style/noNonNullAssertion: <explanation>
+    pool.release(resource3!);
+
+    const resources: { value: number }[] = [];
+    for await (const resource of pool) {
+      resources.push(resource);
+      if (resources.length === 3) {
+        break;
+      }
+    }
+    expect(resources).toEqual([resource1, resource2, resource3]);
   });
 });

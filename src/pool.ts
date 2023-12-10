@@ -21,6 +21,25 @@ export interface CreateLimiterOptions {
   abortError?: unknown;
 }
 
+interface AbortSignalLike {
+  aborted: boolean;
+  reason?: unknown;
+  addEventListener(type: 'abort', listener: () => void): void;
+  removeEventListener(type: 'abort', listener: () => void): void;
+}
+
+function waitAbortSignal(signal: AbortSignalLike) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    signal.addEventListener('abort', () => {
+      reject(signal.reason);
+    });
+  });
+}
+
 /**
  * Options for creating a new `Pool` instance.
  */
@@ -92,7 +111,9 @@ function normalizeOptions<T extends Resource & object = Resource>(
  * Represents a generic object pool.
  * @template T The type of objects in the pool.
  */
-export class Pool<T extends Resource & object = Resource> {
+export class Pool<T extends Resource & object = Resource>
+  implements PromiseLike<void>
+{
   // events handling, can be replaced with EventEmitter
 
   #handlers = {
@@ -158,11 +179,18 @@ export class Pool<T extends Resource & object = Resource> {
 
   #resources: Set<T> = new Set<T>();
 
-  #inUse: Set<T> = new Set<T>();
+  // Map of inUser resources and their release promise resolvers
+  #inUse = new Map<
+    T,
+    {
+      resolve: (resource: T) => void;
+      promise: Promise<T>;
+    }
+  >();
 
   /** exsiting resource size, excluding the ones not created yet */
   get totalSize() {
-    return this.#inUse.size + this.#resources.size;
+    return this.inUseSize + this.size;
   }
 
   /** get inUse resource size */
@@ -175,34 +203,27 @@ export class Pool<T extends Resource & object = Resource> {
     return this.#resources.size;
   }
 
-  #untilRelease() {
-    return new Promise<void>((resolve) => {
-      const releaseListener = (item: T) => {
-        this.off('release', releaseListener);
-        resolve();
-      };
-      this.on('release', releaseListener);
-    });
-  }
-
   /**
    * Acquires a resource from the pool.
    * @param wait if true, will wait until a resource is released
    * @returns if `wait` is true, returns a promise that resolves to the acquired resource, otherwise returns the acquired resource or undefined
    */
   acquire(wait?: false): T | undefined;
-  acquire(wait: true): Promise<T>;
-  acquire(wait?: boolean): Promise<T> | T | undefined {
+  acquire(wait: true, abortSignal?: AbortSignalLike): Promise<T>;
+  acquire(
+    wait?: boolean,
+    abortSignal?: AbortSignalLike,
+  ): Promise<T> | T | undefined {
     if (this.#resources.size) {
       const item = this.#resources.values().next().value;
       this.#resources.delete(item);
-      this.#inUse.add(item);
+      this.#inUse.set(item, withResolvers<T>());
       this.#emit('acquire', item);
       return item;
     }
     const createdItem = this.#create(this.totalSize);
     if (createdItem !== undefined) {
-      this.#inUse.add(createdItem);
+      this.#inUse.set(createdItem, withResolvers<T>());
       this.#emit('acquire', createdItem);
       return createdItem;
     }
@@ -211,22 +232,25 @@ export class Pool<T extends Resource & object = Resource> {
       return undefined;
     }
 
-    return this.#untilRelease().then(() => {
-      return this.acquire(true);
-    });
+    return Promise.race([
+      ...Array.from(this.#inUse.values()).map((resolvers) => resolvers.promise),
+      abortSignal ? waitAbortSignal(abortSignal) : new Promise(() => {}),
+    ]).then(() => this.acquire(true, abortSignal));
   }
   /**
    * Releases a resource and puts it back into the pool.
    * @param item The resource to release.
    */
   release(item: T) {
-    if (this.#inUse.has(item)) {
+    const resolvers = this.#inUse.get(item);
+    if (resolvers) {
       this.#inUse.delete(item);
       if (this.#reset) {
         this.#reset(item);
       }
       this.#emit('release', item);
       this.#resources.add(item);
+      resolvers.resolve(item);
     }
   }
   /**
@@ -235,6 +259,48 @@ export class Pool<T extends Resource & object = Resource> {
   clear() {
     this.#inUse.clear();
     this.#resources.clear();
+  }
+
+  /**
+   * Returns a promise that resolves when all resources are released.
+   * @param onfulfilled
+   * @param onrejected
+   * @returns
+   */
+  then<TResult1 = void, TResult2 = never>(
+    onfulfilled?: (() => TResult1 | PromiseLike<TResult1>) | undefined | null,
+    onrejected?:
+      | ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
+      | undefined
+      | null,
+  ): Promise<TResult1 | TResult2> {
+    return Promise.all(
+      Array.from(this.#inUse.values()).map((resolvers) => resolvers.promise),
+    ).then(onfulfilled, onrejected);
+  }
+
+  [Symbol.asyncIterator]() {
+    return {
+      next: async () => {
+        const item = await this.acquire(true);
+        return {
+          done: item === undefined,
+          value: item,
+        };
+      },
+    };
+  }
+
+  [Symbol.iterator]() {
+    return {
+      next: () => {
+        const item = this.acquire();
+        return {
+          done: item === undefined,
+          value: item,
+        };
+      },
+    };
   }
 
   /**
@@ -267,21 +333,16 @@ export class Pool<T extends Resource & object = Resource> {
     abortError = new Error('user abort'),
   }: CreateLimiterOptions = {}): Limiter<T> {
     const pool = this;
-    const aborts = new Set<(reason: unknown) => void>();
+    const abortCtrl = new AbortController();
     return Object.assign(
-      async function limited(fn, ...args) {
-        const resolvers = withResolvers<T>();
-        const abort = (reason: unknown) => {
-          resolvers.reject(reason);
-        };
-        aborts.add(abort);
+      async function limited(fn, ...args: readonly unknown[]) {
         // biome-ignore lint/suspicious/noAsyncPromiseExecutor: <explanation>
-        return new Promise(async (resolve, reject) => {
+        return new Promise<ReturnType<typeof fn>>(async (resolve, reject) => {
           // mybe we can use this in the future
           // await using ctx = await pool.acquire(true);
           let ctx: T | undefined;
           try {
-            ctx = await Promise.race([pool.acquire(true), resolvers.promise]);
+            ctx = await pool.acquire(true, abortCtrl.signal);
             const start = Date.now();
             const result = await fn.call(ctx, ...args);
             resolve(result);
@@ -295,18 +356,15 @@ export class Pool<T extends Resource & object = Resource> {
             if (ctx) {
               pool.release(ctx);
             }
-            aborts.delete(abort);
           }
         });
       },
       {
         abort(abortedReason: unknown = abortError) {
-          for (const abort of aborts.values()) {
-            abort(abortedReason);
-          }
+          abortCtrl.abort(abortedReason);
         },
       },
-    ) as Limiter<T>;
+    );
   }
 
   /**
