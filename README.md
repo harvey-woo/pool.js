@@ -143,6 +143,15 @@ const resource = await pool.acquire(true);
 // When the resource pool is empty, will wait for the resource to be released
 ```
 
+```javascript
+// Asynchronous acquire can be aborted by passing in an `AbortSignal`
+const controller = new AbortController();
+const resource = await pool.acquire(true, controller.signal);
+controller.abort();
+// Error will be thrown
+resource.id === 0
+```
+
 ### Release pool resources
 
 ```javascript
@@ -163,6 +172,34 @@ pool.on('release', (resource) => {
   console.log(`Resource ${resource.id} has been released`);
 });
 
+```
+
+### Iterable
+
+Pool implements the `Iterable` interface, you can use `for...of` to iterate.
+At the same time, `Pool` also implements the `AsyncIterable` interface, you can use `for await...of` to iterate asynchronously.
+
+```javascript
+// Iterate over the resources in the resource pool, and get the resources at the same time,
+// When iterating synchronously, if there are no resources in the resource pool, the iteration will exit
+for (const resource of pool) {
+  console.log(resource.id);
+}
+
+// When iterating asynchronously, if there are no resources in the resource pool, it will wait for the resources to be acquired
+// So when iterating asynchronously, it will not exit the iteration, which is equivalent to an infinite loop
+for await (const resource of pool) {
+  console.log(resource.id);
+}
+```
+
+### PromiseLike
+
+Pool implements the `PromiseLike` interface, you can use `await` to wait.
+
+```javascript
+// await pool means waiting for all resources to be released before returning
+await pool;
 ```
 
 ### Resource limiter

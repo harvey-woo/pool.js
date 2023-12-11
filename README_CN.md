@@ -146,6 +146,16 @@ const resource = await pool.acquire(true);
 
 ```
 
+```javascript
+// 异步获取资源可以通过传入 `AbortSignal` 来中断
+const controller = new AbortController();
+const resource = await pool.acquire(true, controller.signal);
+controller.abort();
+// 会抛出错误
+resource.id === 0
+```
+
+
 ### 释放资源
 
 ```javascript
@@ -193,6 +203,34 @@ const limiter = pool.limit({
 // 资源限制器提供了一个 `abort` 方法，可以中断当前的消费函数，使执行返回会抛出错误
 limiter.abort(new DOMException('AbortError'));
 
+```
+
+### Iterable
+
+Pool 实现了 `Iterable` 接口，可以使用 `for...of` 进行遍历。
+同时 `Pool` 也实现了 `AsyncIterable` 接口，可以使用 `for await...of` 进行异步遍历。
+
+```javascript
+// 遍历资源池里边的资源，同时会获取资源，
+// 同步遍历时，如果资源池中没有资源，会退出遍历
+for (const resource of pool) {
+  console.log(resource.id);
+}
+
+// 异步遍历时，如果资源池中没有资源，会等待资源的获取
+// 所以异步遍历时，不会退出遍历，相当于一个无限循环
+for await (const resource of pool) {
+  console.log(resource.id);
+}
+```
+
+### PromiseLike
+
+Pool 实现了 `PromiseLike` 接口，可以使用 `await` 进行等待。
+
+```javascript
+// await pool 意味着等待所有资源都被释放，才会返回
+await pool;
 ```
 
 ### pLimit / Pool.limit
