@@ -31,8 +31,6 @@ function getContrastColor(color: string) {
 }
 
 async function eventFunc(this: { name: string }) {
-  // 等待随机时间，单位100ms
-  // Wait for a random duration, 100ms as a unit
   await wait(getRandomDuration());
 }
 
