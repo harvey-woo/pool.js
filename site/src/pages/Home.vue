@@ -17,6 +17,23 @@ import CodeBlock from '../components/CodeBlock.vue'
         <p class="hero-version">
           基于 <code>Symbol.dispose</code> / <code>Symbol.asyncDispose</code> 的 ES2024 显式资源管理方案。
         </p>
+        <div class="badges">
+          <a href="https://www.npmjs.com/package/@cat5th/pool.js" target="_blank" rel="noopener">
+            <img src="https://img.shields.io/npm/v/@cat5th/pool.js.svg?style=flat-square" alt="npm version" />
+          </a>
+          <a href="https://www.npmjs.com/package/@cat5th/pool.js" target="_blank" rel="noopener">
+            <img src="https://img.shields.io/npm/l/@cat5th/pool.js.svg?style=flat-square" alt="license" />
+          </a>
+          <a href="https://www.npmjs.com/package/@cat5th/pool.js" target="_blank" rel="noopener">
+            <img src="https://img.shields.io/npm/dt/@cat5th/pool.js.svg?style=flat-square" alt="npm downloads" />
+          </a>
+          <a href="https://codecov.io/gh/harvey-woo/pool.js" target="_blank" rel="noopener">
+            <img src="https://img.shields.io/codecov/c/github/harvey-woo/pool.js.svg?style=flat-square" alt="coverage" />
+          </a>
+          <a href="https://github.com/harvey-woo/pool.js/actions/workflows/npm-publish.yml" target="_blank" rel="noopener">
+            <img src="https://github.com/harvey-woo/pool.js/actions/workflows/npm-publish.yml/badge.svg" alt="Build Status" />
+          </a>
+        </div>
         <div class="hero-actions">
           <RouterLink to="/playground" class="btn btn-primary">
             在线演示 →
@@ -194,6 +211,22 @@ await wrapped('world')" />
   border-radius: 4px;
   color: #667eea;
   font-size: 0.9em;
+}
+
+.badges {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 32px;
+}
+
+.badges img {
+  height: 20px;
+}
+
+.badges a:hover img {
+  opacity: 0.8;
 }
 
 .hero-actions {
