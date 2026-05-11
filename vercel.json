@@ -1,0 +1,8 @@
+{
+  "buildCommand": "yarn install --immutable && cd site && vite build",
+  "outputDirectory": "site/dist",
+  "installCommand": "echo skip",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

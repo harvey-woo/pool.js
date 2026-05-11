@@ -1,385 +1,352 @@
-import queue from './utils/queue';
-import wait from './utils/wait';
-import withResolvers from './utils/with-resolvers';
+import { promiseWithResolvers } from './with-resolvers'
+import { ResourceContainer } from './resource-container'
 
-// biome-ignore lint/suspicious/noEmptyInterface: <explanation>
-export interface Resource {
-  // mybe we can use this in the future
-  // [Symbol.dispose]?: () => void;
-  // [Symbol.asyncDispose]?: () => Promise<void>;
-}
-
-export type CreatePoolOptionsCreate<T extends Resource & object = Resource> = (
-  createdCount: number,
-) => T | undefined;
-
-export interface CreateLimiterOptions {
-  /**
-   * The minimum duration of the execution of the function.
-   */
-  minDuration?: number;
-  abortError?: unknown;
-}
-
+// biome-ignore lint/suspicious/no-explicit-any: generic type constraint
 interface AbortSignalLike {
-  aborted: boolean;
-  reason?: unknown;
-  addEventListener(type: 'abort', listener: () => void): void;
-  removeEventListener(type: 'abort', listener: () => void): void;
+  aborted: boolean
+  reason?: unknown
+  addEventListener(type: 'abort', listener: () => void): void
+  removeEventListener(type: 'abort', listener: () => void): void
 }
 
-function waitAbortSignal(signal: AbortSignalLike) {
-  return new Promise<void>((resolve, reject) => {
+function waitAbortSignal(signal: AbortSignalLike): Promise<void> {
+  return new Promise<void>((_resolve, reject) => {
     if (signal.aborted) {
-      reject(signal.reason);
-      return;
+      reject(signal.reason)
+      return
     }
-    signal.addEventListener('abort', () => {
-      reject(signal.reason);
-    });
-  });
+    const onAbort = () => {
+      reject(signal.reason)
+      signal.removeEventListener('abort', onAbort)
+    }
+    signal.addEventListener('abort', onAbort)
+  })
 }
 
 /**
- * Options for creating a new `Pool` instance.
+ * CoolDown callback receives timing information about resource scheduling.
+ * Returns a Promise that controls when the resource becomes available again.
  */
-export interface CreatePoolOptions<T extends Resource & object = Resource> {
-  /**
-   * A function that creates a new resource.
-   * @param createdCount The number of resources that have been created so far.
-   */
-  create?: CreatePoolOptionsCreate<T>;
-  /**
-   * A function that resets a resource to its initial state when it is released.
-   * @param item The resource to reset.
-   */
-  reset?: (item: T) => void;
-  /**
-   * The number of resources to initialize the pool with.
-   */
-  initialSize?: number;
-}
+export type CoolDown = (timing: {
+  /** When the resource was borrowed */
+  acquireAt: number
+  /** When the resource was delivered to the caller */
+  deliverAt: number
+  /** When the resource began being released */
+  releaseAt: number
+}) => Promise<void>
 
-export type AllCreatePoolOptions<T extends Resource & object = Resource> =
-  | CreatePoolOptions<T>
-  | CreatePoolOptionsCreate<T>
-  | number;
-
-export interface Limiter<T extends Resource & object = Resource> {
-  <Args extends readonly unknown[], R>(
-    fn: (this: T, ...args: Args) => R,
-    ...args: Args
-  ): Promise<R>;
-  abort(reason?: unknown): void;
-}
-
-function createDefaultResource() {
-  return Object.create(null);
-}
-
-const defaultOptions = {
-  create: (i: number) => createDefaultResource(),
-  reset: () => {},
-  initialSize: 0,
-} satisfies CreatePoolOptions;
-
-function normalizeOptions<T extends Resource & object = Resource>(
-  options?: AllCreatePoolOptions<T>,
-): Required<CreatePoolOptions<T>> {
-  if (typeof options === 'number') {
-    const numbericOptions = options;
-    return {
-      ...defaultOptions,
-      create: (i: number) =>
-        i < numbericOptions ? (createDefaultResource() as T) : undefined,
-    };
+/** Error thrown when no resources are available and wait is false */
+export class NoResourceAvailableError extends Error {
+  constructor(message?: string) {
+    super(message ?? 'No resource available')
   }
-  if (typeof options === 'function') {
-    return {
-      ...defaultOptions,
-      create: options,
-    };
-  }
-  return {
-    ...defaultOptions,
-    create: defaultOptions.create as CreatePoolOptionsCreate<T>,
-    ...options,
-  };
+}
+
+export function isNoResourceAvailableError(
+  error: unknown
+): error is NoResourceAvailableError {
+  return error instanceof NoResourceAvailableError
+}
+
+export interface PoolOptions<T> {
+  /** Maximum concurrency (total resources the pool can manage) */
+  concurrency: number
+  /** Factory function to create a new resource. Receives the index of the resource being created. */
+  create?: (created: number) => T | PromiseLike<T>
+  /** Pre-existing resources. These won't be disposed when the pool is cleaned up. */
+  resources?: T[]
+  /** Cooldown function to control re-scheduling timing after a resource is released. */
+  coolDown?: CoolDown
+  /** Whether the pool should dispose resources during cleanup. Defaults to true. */
+  shouldDispose?: boolean
 }
 
 /**
- * Represents a generic object pool.
- * @template T The type of objects in the pool.
+ * Resource pool with explicit resource management.
+ *
+ * @example
+ * ```ts
+ * // Simple pool with concurrency limit
+ * const pool = new Pool(3)
+ * using res = await pool.acquire()
+ * console.log(res.value)
+ * // res is automatically released via Symbol.dispose
+ *
+ * // Pool with custom resource factory
+ * const pool = new Pool({
+ *   concurrency: 5,
+ *   create: (i) => ({ id: i, conn: createConnection(i) }),
+ * })
+ *
+ * // Pool from existing resources
+ * const pool = new Pool([worker1, worker2, worker3])
+ * ```
  */
-export class Pool<T extends Resource & object = Resource>
-  implements PromiseLike<void>
-{
-  // events handling, can be replaced with EventEmitter
+export class Pool<T = number> implements PromiseLike<ResourceContainer<T>> {
+  private _create: (created: number) => T | PromiseLike<T>
+  private _initialResources: number
+  private _shouldDispose: boolean
+  private _coolDown?: CoolDown
+  private _resources: Promise<T>[] = []
+  private _created = new Set<Promise<T>>()
+  private _concurrency: number
 
-  #handlers = {
-    acquire: queue<(item: T) => void>(),
-    release: queue<(item: T) => void>(),
-  };
+  /** Resolvers for borrowed resources — maps resource promise to its release resolver */
+  private _resolvers: Map<
+    Promise<T>,
+    { resolve: () => void; promise: Promise<void> }
+  > = new Map()
 
-  /**
-   * bind event handler
-   * @param evt event name, should be 'acquire' or 'release'
-   * @param fn handler
-   */
-  on(evt: 'acquire' | 'release', fn: (item: T) => void) {
-    this.#handlers[evt].add(fn);
-  }
+  constructor(
+    options: number | PoolOptions<T> | T[]
+  ) {
+    const tmp = options
+    const { concurrency, create, resources, coolDown, shouldDispose } =
+      Array.isArray(tmp)
+        ? {
+            concurrency: tmp.length,
+            create: (i: number) => tmp[i] as T,
+            resources: undefined,
+            coolDown: undefined as CoolDown | undefined,
+            shouldDispose: false
+          }
+        : typeof tmp === 'number'
+          ? { concurrency: tmp, create: undefined, resources: undefined, coolDown: undefined, shouldDispose: true }
+          : {
+              concurrency: tmp.concurrency,
+              create: tmp.create,
+              resources: tmp.resources ?? undefined,
+              coolDown: tmp.coolDown,
+              shouldDispose: tmp.shouldDispose ?? true
+            }
 
-  /**
-   * unbind event handler
-   * @param evt event name, should be 'acquire' or 'release'
-   * @param fn handler
-   */
-  off(evt: 'acquire' | 'release', fn?: (item: T) => void) {
-    if (fn === undefined) {
-      this.#handlers[evt].clear();
-      return;
+    this._shouldDispose = shouldDispose ?? false
+    this._concurrency = concurrency
+    this._create = create ?? ((i) => i as unknown as T)
+    this._coolDown = coolDown
+
+    if (resources?.length) {
+      this._resources = resources.map((resource) => Promise.resolve(resource))
+      this._concurrency = Math.max(this._concurrency, resources.length)
     }
-    this.#handlers[evt].remove(fn);
-  }
 
-  #emit(evt: 'acquire' | 'release', item: T) {
-    this.#handlers[evt](item);
-  }
-
-  #create: CreatePoolOptionsCreate<T>;
-  #reset?: (item: T) => void;
-
-  /**
-   * @param options should be a create function or concurrent number or options object
-   */
-  constructor(options: AllCreatePoolOptions<T>) {
-    const { create, reset, initialSize } = normalizeOptions(options);
-    this.#create = create;
-    this.#reset = reset;
-    this.create(initialSize);
+    this._initialResources = resources?.length ?? 0
   }
 
   /**
-   * create resources
-   * @param size size of resources to create
+   * Acquire a resource from the pool.
+   * Returns a ResourceContainer that releases the resource when disposed.
    */
-  create(size: number) {
-    for (let i = 0; i < size; i++) {
-      const item = this.#create(i);
-      if (item !== undefined) {
-        this.#resources.add(item);
-      } else {
-        throw new Error(
-          'Pool: create resource failed, undefined returned from create function',
-        );
-      }
+  async acquire({
+    wait = true,
+    abortSignal
+  }: {
+    wait?: boolean
+    abortSignal?: AbortSignalLike
+  } = {}): Promise<ResourceContainer<T>> {
+    const acquireAt = Date.now()
+    const availableLen = this._created.size + this._initialResources
+
+    let p: Promise<T> | undefined
+    if (this._resources.length > 0) {
+      p = this._resources.pop()!
+    } else if (this._concurrency - availableLen > 0) {
+      const createdRes = this._create(availableLen)
+      p = Promise.resolve(createdRes)
+      this._created.add(p)
     }
-  }
 
-  #resources: Set<T> = new Set<T>();
-
-  // Map of inUser resources and their release promise resolvers
-  #inUse = new Map<
-    T,
-    {
-      resolve: (resource: T) => void;
-      promise: Promise<T>;
-    }
-  >();
-
-  /** exsiting resource size, excluding the ones not created yet */
-  get totalSize() {
-    return this.inUseSize + this.size;
-  }
-
-  /** get inUse resource size */
-  get inUseSize() {
-    return this.#inUse.size;
-  }
-
-  /** get available resource size */
-  get size() {
-    return this.#resources.size;
-  }
-
-  /**
-   * Acquires a resource from the pool.
-   * @param wait if true, will wait until a resource is released
-   * @returns if `wait` is true, returns a promise that resolves to the acquired resource, otherwise returns the acquired resource or undefined
-   */
-  acquire(wait?: false): T | undefined;
-  acquire(wait: true, abortSignal?: AbortSignalLike): Promise<T>;
-  acquire(
-    wait?: boolean,
-    abortSignal?: AbortSignalLike,
-  ): Promise<T> | T | undefined {
-    if (this.#resources.size) {
-      const item = this.#resources.values().next().value;
-      this.#resources.delete(item);
-      this.#inUse.set(item, withResolvers<T>());
-      this.#emit('acquire', item);
-      return item;
-    }
-    const createdItem = this.#create(this.totalSize);
-    if (createdItem !== undefined) {
-      this.#inUse.set(createdItem, withResolvers<T>());
-      this.#emit('acquire', createdItem);
-      return createdItem;
+    if (p) {
+      this._resolvers.set(p, promiseWithResolvers())
+      const value = await p
+      const deliverAt = Date.now()
+      return new ResourceContainer({
+        value,
+        release: () => {
+          this._release({
+            promiseValue: p!,
+            acquireAt,
+            deliverAt
+          })
+        }
+      })
     }
 
     if (!wait) {
-      return undefined;
+      throw new NoResourceAvailableError()
     }
 
-    return Promise.race([
-      ...Array.from(this.#inUse.values()).map((resolvers) => resolvers.promise),
-      abortSignal ? waitAbortSignal(abortSignal) : new Promise(() => {}),
-    ]).then(() => this.acquire(true, abortSignal));
-  }
-  /**
-   * Releases a resource and puts it back into the pool.
-   * @param item The resource to release.
-   */
-  release(item: T) {
-    const resolvers = this.#inUse.get(item);
-    if (resolvers) {
-      this.#inUse.delete(item);
-      if (this.#reset) {
-        this.#reset(item);
-      }
-      this.#emit('release', item);
-      this.#resources.add(item);
-      resolvers.resolve(item);
-    }
-  }
-  /**
-   * Clears the pool.
-   */
-  clear() {
-    this.#inUse.clear();
-    this.#resources.clear();
+    await Promise.race([
+      ...Array.from(this._resolvers.values(), ({ promise }) => promise),
+      ...(abortSignal ? [waitAbortSignal(abortSignal)] : [])
+    ])
+    return this.acquire({ abortSignal })
   }
 
-  /**
-   * Returns a promise that resolves when all resources are released.
-   * @param onfulfilled
-   * @param onrejected
-   * @returns
-   */
-  then<TResult1 = void, TResult2 = never>(
-    onfulfilled?: (() => TResult1 | PromiseLike<TResult1>) | undefined | null,
+  /** Pool implements PromiseLike for awaiting all resources to be released */
+  then<TResult1 = ResourceContainer<T>, TResult2 = never>(
+    onfulfilled?:
+      | ((value: ResourceContainer<T>) => TResult1 | PromiseLike<TResult1>)
+      | undefined
+      | null,
     onrejected?:
       | ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
       | undefined
-      | null,
-  ): Promise<TResult1 | TResult2> {
-    return Promise.all(
-      Array.from(this.#inUse.values()).map((resolvers) => resolvers.promise),
-    ).then(onfulfilled, onrejected);
+      | null
+  ): PromiseLike<TResult1 | TResult2> {
+    return this.acquire().then(onfulfilled, onrejected)
   }
 
-  [Symbol.asyncIterator]() {
-    return {
-      next: async () => {
-        const item = await this.acquire(true);
-        return {
-          done: item === undefined,
-          value: item,
-        };
-      },
-    };
+  /** Create a Scheduler for task-based execution */
+  schedule(): Scheduler<T> {
+    return new Scheduler<T>({ pool: this })
   }
 
-  [Symbol.iterator]() {
-    return {
-      next: () => {
-        const item = this.acquire();
-        return {
-          done: item === undefined,
-          value: item,
-        };
-      },
-    };
+  /** Enqueue a single task — convenience method for pool.schedule().enqueue() */
+  enqueue<Fn extends Task<T>>(
+    task: Fn,
+    ...args: Parameters<Fn>
+  ): Promise<Awaited<ReturnType<Fn>>> {
+    return this.schedule().enqueue(task, ...args) as Promise<Awaited<ReturnType<Fn>>>
   }
 
-  /**
-   * Creates a new `Pool` instance from an existing array.
-   * @param items An array of items to initialize the pool with.
-   * @param reset An optional function that is called on each item when it is released.
-   */
-  static from<T extends Resource & object>(
-    items: T[],
-    {
-      reset,
-    }: {
-      reset?: (item: T) => void;
-    } = {},
-  ) {
-    return new Pool<T>({
-      create: (i) => items[i],
-      reset,
-      initialSize: items.length,
-    });
+  private async _release({
+    promiseValue,
+    acquireAt,
+    deliverAt
+  }: {
+    promiseValue: Promise<T>
+    acquireAt: number
+    deliverAt: number
+  }): Promise<void> {
+    await this._coolDown?.({ acquireAt, deliverAt, releaseAt: Date.now() })
+    this._resources.push(promiseValue)
+    const resolvers = this._resolvers.get(promiseValue)
+    if (resolvers) {
+      resolvers.resolve()
+    }
   }
 
   /**
-   * create a limiter function, which will limit the concurrent execution of the function, passing the pool resource as the `this` context
-   * @param minDuration the minimum duration of the execution of the function
-   * @returns a limiter function
+   * Dispose the pool — waits for all borrowed resources to be returned,
+   * then disposes pool-created resources and resets the pool state.
    */
-  limit({
-    minDuration = 0,
-    abortError = new Error('user abort'),
-  }: CreateLimiterOptions = {}): Limiter<T> {
-    const pool = this;
-    const abortCtrl = new AbortController();
-    return Object.assign(
-      async function limited(fn, ...args: readonly unknown[]) {
-        // biome-ignore lint/suspicious/noAsyncPromiseExecutor: <explanation>
-        return new Promise<ReturnType<typeof fn>>(async (resolve, reject) => {
-          // mybe we can use this in the future
-          // await using ctx = await pool.acquire(true);
-          let ctx: T | undefined;
-          try {
-            ctx = await pool.acquire(true, abortCtrl.signal);
-            const start = Date.now();
-            const result = await fn.call(ctx, ...args);
-            resolve(result);
-            const duration = Date.now() - start;
-            if (duration < minDuration) {
-              await wait(minDuration - duration);
+  async [Symbol.asyncDispose](): Promise<void> {
+    if (this._shouldDispose) {
+      await Promise.all(
+        Array.from(
+          this._resolvers.entries(),
+          async ([promise, { promise: resolverPromise }]) => {
+            await resolverPromise
+            if (!this._created.has(promise)) {
+              return
             }
-          } catch (e) {
-            reject(e);
-          } finally {
-            if (ctx) {
-              pool.release(ctx);
+            const res = await promise
+            if (typeof res !== 'object' || res === null) {
+              return
+            }
+            if (
+              Symbol.asyncDispose in res &&
+              typeof res[Symbol.asyncDispose] === 'function'
+            ) {
+              await (res as AsyncDisposable)[Symbol.asyncDispose]()
+              return
+            }
+            if (
+              Symbol.dispose in res &&
+              typeof res[Symbol.dispose] === 'function'
+            ) {
+              ;(res as Disposable)[Symbol.dispose]()
             }
           }
-        });
-      },
-      {
-        abort(abortedReason: unknown = abortError) {
-          abortCtrl.abort(abortedReason);
-        },
-      },
-    );
-  }
-
-  /**
-   * create a pool and a limiter function, which will limit the concurrent execution of the function, passing the pool resource as the `this` context
-   * @param options the options for creating the pool
-   * @param limiterOptions the options for creating the limiter
-   * @returns
-   */
-  static limit<T extends Resource & object = Resource>(
-    options: AllCreatePoolOptions<T> | Pool<T>,
-    limiterOptions?: CreateLimiterOptions,
-  ): Limiter<T> {
-    const pool: Pool<T> = options instanceof Pool ? options : new Pool(options);
-    return pool.limit(limiterOptions);
+        )
+      )
+    }
+    this._resources = []
+    this._created.clear()
+    this._resolvers = new Map()
   }
 }
 
-export default Pool;
+/** A task function that receives the pool resource as `this` context */
+export type Task<T> = (this: T, ...args: unknown[]) => unknown
+
+/**
+ * Scheduler — enqueues tasks and runs them against pooled resources.
+ *
+ * @example
+ * ```ts
+ * const pool = new Pool(2)
+ * const scheduler = pool.schedule()
+ *
+ * function work(this: number, data: string) {
+ *   console.log(`Worker ${this} processing: ${data}`)
+ * }
+ *
+ * await scheduler.enqueue(work, 'task1')
+ * await scheduler.enqueue(work, 'task2')
+ * ```
+ */
+export class Scheduler<T> {
+  private _pool: Pool<T>
+  private _queue: ((res: T) => Promise<void>)[] = []
+
+  constructor({ pool }: { pool: Pool<T> }) {
+    this._pool = pool
+  }
+
+  /**
+   * Enqueue a task. The task function receives a pool resource as `this`.
+   * Returns a promise that resolves when the task completes.
+   */
+  enqueue<Fn extends Task<T>>(
+    task: Fn,
+    ...args: Parameters<Fn>
+  ): Promise<Awaited<ReturnType<Fn>>> {
+    const { promise, resolve, reject } = promiseWithResolvers<Awaited<ReturnType<Fn>>>()
+    this._queue.push(async (res) => {
+      try {
+        resolve((await task.call(res, ...args)) as Awaited<ReturnType<Fn>>)
+      } catch (error) {
+        reject(error)
+      }
+    })
+    this._run()
+    return promise
+  }
+
+  /**
+   * Enqueue multiple tasks from an iterable.
+   * Returns a promise that resolves when all tasks complete.
+   */
+  async enqueueAll<Fn extends Task<T>>(
+    tasks: Iterable<Fn> | AsyncIterable<Fn>,
+    ...args: Parameters<Fn>
+  ): Promise<Awaited<ReturnType<Fn>>[]> {
+    const results: Promise<Awaited<ReturnType<Fn>>>[] = []
+    for await (const task of tasks) {
+      results.push(this.enqueue(task, ...args))
+    }
+    return Promise.all(results)
+  }
+
+  /**
+   * Wrap a task function so that calling it automatically enqueues it.
+   */
+  wrap<Fn extends Task<T>>(task: Fn) {
+    return (...args: Parameters<Fn>) => this.enqueue(task, ...args)
+  }
+
+  private async _run(): Promise<void> {
+    while (this._queue.length > 0) {
+      const task = this._queue.shift()!
+      const res = await this._pool.acquire()
+      try {
+        await task(res.value)
+      } finally {
+        res[Symbol.dispose]()
+      }
+    }
+  }
+}

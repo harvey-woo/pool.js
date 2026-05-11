@@ -1,3 +1,4 @@
+// Local re-export of the new Pool API
 export {
   Pool,
   Scheduler,
@@ -6,5 +7,5 @@ export {
   type CoolDown,
   type PoolOptions,
   type Task
-} from './pool'
-export { ResourceContainer } from './resource-container'
+} from '../../src/index.ts'
+export { ResourceContainer } from '../../src/index.ts'

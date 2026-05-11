@@ -18,13 +18,11 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: 20
-          registry-url: https://registry.npmjs.org/
-      - run: yarn install --frozen-lockfile
+          cache: 'yarn'
+      - run: yarn install --immutable
       - run: yarn test
       - run: yarn build
       - run: yarn cov --token ${{secrets.CONV_TOKEN}}
         env:
           CONV_TOKEN: ${{secrets.CONV_TOKEN}}
-      - run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
+      - run: npm publish --provenance

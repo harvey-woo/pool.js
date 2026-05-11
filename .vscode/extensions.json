@@ -1,7 +1,7 @@
 {
-    "recommendations": [
-        "biomejs.biome",
-        "seatonjiang.gitmoji-vscode",
-        "editorconfig.editorconfig"
-    ]
+  "recommendations": [
+    "oxc.oxc-vscode",
+    "Vue.volar",
+    "Vue.vscode-typescript-vue-plugin"
+  ]
 }

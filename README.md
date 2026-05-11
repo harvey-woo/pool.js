@@ -1,4 +1,4 @@
-# pool.js
+# 🏊 pool.js
 
 [![npm version](https://img.shields.io/npm/v/@cat5th/pool.js.svg?style=flat-square)](https://www.npmjs.com/package/@cat5th/pool.js)
 [![npm version](https://img.shields.io/npm/l/@cat5th/pool.js.svg?style=flat-square)](https://www.npmjs.com/package/@cat5th/pool.js)
@@ -6,255 +6,205 @@
 [![coverage](https://img.shields.io/codecov/c/github/harvey-woo/pool.js.svg?style=flat-square)](https://codecov.io/gh/harvey-woo/pool.js)
 [![Build Status](https://github.com/harvey-woo/pool.js/actions/workflows/npm-publish.yml/badge.svg)](https://github.com/harvey-woo/pool.js/actions/workflows/npm-publish.yml)
 
-![example](./example.gif)
+![example](./example.webp)
 
-This is an abstract resource pool utility library based on the resource pool pattern, JavaScript, and TypeScript friendly.
-It helps you quickly build a resource pool and manage it.
+A lightweight resource pool scheduler for JavaScript and TypeScript.
+Based on ES2024 Explicit Resource Management (`Symbol.dispose` / `Symbol.asyncDispose`).
 
-
-- [中文文档](./README_CN.md)
-  - [优雅完成高频面试题《请求并发数控制》](https://juejin.cn/post/7310009007921791003)
-- [English README](./README.md)
+- [中文文档](#中文)
+- [English README](#english)
+- [Live Demo](https://pooljs.cat5th.com/playground)
+- [API Docs](https://pooljs.cat5th.com/docs)
+- [Blog: Implement Request Concurrency Control with Elegance](https://juejin.cn/post/7310009007921791003)
 
 
 ## Features
 
-Supports the following features:
-- [x] Creating a resource pool
-- [x] Acquiring and releasing resources
-- [ ] Scaling up and down the resource pool
-- [x] Listening to resource pool events
-- [x] Listening to resource events
-- [x] Asynchronous scheduling of resources
-
+- [x] 🎯 Explicit resource management via `Symbol.dispose`
+- [x] 📋 Task scheduler (`Scheduler`) for automatic resource allocation
+- [x] ⏱️ CoolDown callbacks for rate limiting
+- [x] 🔧 Flexible configuration: factory functions, pre-created resources, custom concurrency
+- [x] ⏳ Async cleanup via `Symbol.asyncDispose`
+- [x] 📦 Zero dependencies
 
 ## Installation
 
 ```bash
 npm install @cat5th/pool.js
 ```
+
 or yarn
 
 ```bash
 yarn add @cat5th/pool.js
 ```
 
+## Quick Start
 
-## Try it out
-
-Build a resource pool
-
-```javascript
-import { Pool } from '@cat5th/pool.js';
-const pool = new Pool(3);
-```
-
-Build a Web Worker resource pool
+Create a resource pool with a concurrency limit:
 
 ```javascript
 import { Pool } from '@cat5th/pool.js';
 
-const workerPool = new Pool((created) => {
-  if (created > 3) {
-    return undefined;
-  }
-  const worker = new Worker('worker.js');
-  return worker;
+const pool = new Pool({
+  concurrency: 3,
+  create: (i) => ({ id: i })
 });
 
-const limiter = workerPool.limit();
-limiter(function() {
-  // this === worker
-  this.postMessage('hello');
-});
+// acquire() returns a ResourceContainer
+// The resource is automatically released when leaving scope (Symbol.dispose)
+using resource = await pool.acquire();
+console.log(resource.value.id);
+
+// Clean up the entire pool (waits for all borrowed resources to return)
+await pool[Symbol.asyncDispose]();
 ```
 
-Limit the request rate to a maximum of 10 times per second.
-```javascript
-import { limit } from '@cat5th/pool.js';
+Use the Scheduler for task-based execution:
 
-const request = limit(function() {
-  const response = await fetch('https://api.github.com');
-  return response.json();
-}, 10, {
-  minDuration: 1000,
+```javascript
+const pool = new Pool({
+  concurrency: 2,
+  create: (i) => `worker-${i}`
 });
 
-for (let i = 0; i < 100; i++) {
-  request();
+const scheduler = pool.schedule();
+
+function work(this: string, data: string) {
+  console.log(`${this} processing: ${data}`);
+  return data.toUpperCase();
 }
+
+// Automatically dispatch to available resources
+const result = await scheduler.enqueue(work, 'hello');
+
+// Or wrap a function for easy reuse
+const wrapped = scheduler.wrap(work);
+await wrapped('world');
 ```
-
-## Example
-
-Please see [example](./example)
-
-![example](./example.gif)
 
 ## Documentation
 
-### Create a resource pool
+### Pool
+
+Create a resource pool:
 
 ```javascript
 import { Pool } from '@cat5th/pool.js';
 
-const create = (created) => {
-  // create resource
-  return {
-    // `created` is the number of resources created
-    id: created,
-  };
-};
-
-const pool = new Pool(create);
-
-// Or pass in an object
+// Via config object
 const pool = new Pool({
-  create,
-  // The initial number of resources to create
-  initialSize: 10,
-  // Resource reset function
-  reset: (resource) => {
-    console.log('The resource has been released');
-  },
+  concurrency: 5,
+  create: (i) => createDatabaseConnection(i),
+  coolDown({ deliverAt, releaseAt }) {
+    // Rate limit: ensure minimum 1s between uses
+    return new Promise(resolve =>
+      setTimeout(resolve, Math.max(0, 1000 - (releaseAt - deliverAt)))
+    );
+  }
 });
 
+// Via concurrency number (resources are auto-generated indices)
+const pool2 = new Pool(3);
+// Equivalent to: new Pool({ concurrency: 3, create: (i) => i })
 
-// Or pass in a number
-const pool = new Pool(10);
-// equivalent to
-const pool = new Pool((created) => {
-  return created > 10 ? undefined : Object.create(null);
-});
-
+// Via existing resource array
+const pool3 = new Pool([worker1, worker2, worker3]);
 ```
 
-### Acquire pool resources
+### PoolOptions
+
+| Property | Type | Default | Description |
+|---|---|---|---|
+| `concurrency` | `number` | — | Maximum number of resources the pool can manage |
+| `create` | `(created: number) => T \| PromiseLike<T>` | `(i) => i` | Factory function to create a new resource |
+| `resources` | `T[]` | — | Pre-existing resources; these are **not** disposed on cleanup |
+| `coolDown` | `CoolDown` | — | Callback to control re-scheduling timing after release |
+| `shouldDispose` | `boolean` | `true` | Whether to dispose pool-created resources on cleanup |
+
+### acquire()
+
+Acquire a resource from the pool. Returns a `ResourceContainer<T>`.
 
 ```javascript
-// Synconous acquire
-const resource = pool.acquire();
-// resource?.id === 0
-// When the resource pool is empty, `acquire` returns `undefined`
+// Default: wait if no resource is available
+const resource = await pool.acquire();
 
-// Asynchronous acquire
-const resource = await pool.acquire(true);
-// resource.id === 0
-// When the resource pool is empty, will wait for the resource to be released
-```
-
-```javascript
-// Asynchronous acquire can be aborted by passing in an `AbortSignal`
-const controller = new AbortController();
-const resource = await pool.acquire(true, controller.signal);
-controller.abort();
-// Error will be thrown
-resource.id === 0
-```
-
-### Release pool resources
-
-```javascript
-// Release is asynchronous
-pool.release(resource);
-```
-
-### Listen to resource pool events
-
-```javascript
-// Listen to the `acquire` event
-pool.on('acquire', (resource) => {
-  console.log(`Resource ${resource.id} has been acquired`);
-});
-
-// Listen to the `release` event
-pool.on('release', (resource) => {
-  console.log(`Resource ${resource.id} has been released`);
-});
-
-```
-
-### Iterable
-
-Pool implements the `Iterable` interface, you can use `for...of` to iterate.
-At the same time, `Pool` also implements the `AsyncIterable` interface, you can use `for await...of` to iterate asynchronously.
-
-```javascript
-// Iterate over the resources in the resource pool, and get the resources at the same time,
-// When iterating synchronously, if there are no resources in the resource pool, the iteration will exit
-for (const resource of pool) {
-  console.log(resource.id);
-}
-
-// When iterating asynchronously, if there are no resources in the resource pool, it will wait for the resources to be acquired
-// So when iterating asynchronously, it will not exit the iteration, which is equivalent to an infinite loop
-for await (const resource of pool) {
-  console.log(resource.id);
-}
-```
-
-### PromiseLike
-
-Pool implements the `PromiseLike` interface, you can use `await` to wait.
-
-```javascript
-// await pool means waiting for all resources to be released before returning
-await pool;
-```
-
-### Resource limiter
-
-```javascript
-const limiter = pool.limit();
-
-// Resource limiter is an execution function that needs to pass in an asynchronous consumption function and its parameters
-// The limiter returns a `Promise`, which will execute the consumption function when there are resources in the resource pool
-// When there are no resources in the resource pool, the consumption function will be executed when there are resources in the resource pool
-const result = await limiter(async function(...args) {
-  console.log(`Current resource is ${this.id}`)
-  // resource.id === 0
-  // args === [1, 2, 3]
-  return 1;
-}, 1, 2, 3);
-
-// limiter method supports passing in limiter options
-const limiter = pool.limit({
-  // The minimum execution time of the consumption function, if the execution time of the consumption function is less than `minDuration`,
-  // The execution will end at the same time as the consumption function, but the used resources will be released after `minDuration`
-  minDuration: 1000,
-});
-
-// limiter has a `abort` method that can abort the current consumption function, the return of execution will throw an error
-limiter.abort(new DOMException('AbortError'));
-
-```
-
-### pLimit / Pool.limit / limit
-
-Yes, `cat5th/pool.js` provides a convenient method called `pLimit` and `Pool.limit`, which is an alias for `Pool.prototype.limit`.
-
-```javascript
-import { pLimit } from '@cat5th/pool.js';
-
-// The first argument of `pLimit` is the parameter for the `Pool` constructor, and the second argument is the parameter for `Pool.prototype.limit`
-const limiter = pLimit(10, {
-  minDuration: 1000,
-});
-
-```
-
-`limit` is a wrapper method for `Pool.limit`, which is directly return a function that can be executed.
-
-```javascript
-import { limit } from '@cat5th/pool.js';
-const fn = limit(async function() {
+// wait: false — throw immediately if no resource
+try {
+  using resource = await pool.acquire({ wait: false });
   // ...
-}, 10, {
-  minDuration: 1000,
+} catch (error) {
+  if (isNoResourceAvailableError(error)) {
+    console.log('No resource available');
+  }
+}
+
+// AbortSignal — cancel a wait
+const controller = new AbortController();
+using resource = await pool.acquire({ abortSignal: controller.signal });
+// ...
+controller.abort(); // throws AbortError
+```
+
+### schedule()
+
+Create a `Scheduler` for task-based resource execution:
+
+```javascript
+const scheduler = pool.schedule();
+
+await scheduler.enqueue(
+  function(this: Connection, query) {
+    return this.query(query);
+  },
+  'SELECT * FROM users'
+);
+```
+
+### Scheduler
+
+The `Scheduler` provides a task-based approach — you don't manually acquire or release resources.
+
+```javascript
+const scheduler = pool.schedule();
+
+// enqueue — execute a single task
+const result = await scheduler.enqueue(workFn, arg1, arg2);
+
+// enqueueAll — batch execute from an iterable
+const results = await scheduler.enqueueAll(tasks, ...args);
+
+// wrap — return a function that auto-enqueues
+const query = scheduler.wrap(function(this: Connection, sql) {
+  return this.query(sql);
 });
-fn(...args);
+const rows = await query('SELECT * FROM users');
+```
+
+### CoolDown
+
+A callback that receives timing information and returns a Promise controlling when the resource becomes available again:
+
+```javascript
+const pool = new Pool({
+  concurrency: 5,
+  create: (i) => createHttpClient(i),
+  coolDown: async ({ acquireAt, deliverAt, releaseAt }) => {
+    // Wait 100ms after release before re-use
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+});
+```
+
+### Symbol.asyncDispose
+
+Clean up the pool — waits for all borrowed resources to return, then disposes pool-created resources:
+
+```javascript
+await pool[Symbol.asyncDispose]();
 ```
 
 ## Thanks
-Inspired by the following projects:
-- [pLimit](https://github.com/sindresorhus/p-limit)
+
+Inspired by [pLimit](https://github.com/sindresorhus/p-limit).
