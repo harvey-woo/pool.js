@@ -13,16 +13,22 @@ on:
 jobs:
   publish-npm:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'yarn'
-      - run: yarn install --immutable
-      - run: yarn test
-      - run: yarn build
-      - run: yarn cov --token ${{secrets.CONV_TOKEN}}
-        env:
-          CONV_TOKEN: ${{secrets.CONV_TOKEN}}
+          node-version: 24
+      - run: corepack enable
+      - run: corepack yarn install --immutable
+      - run: corepack yarn test
+      - uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
+      - run: corepack yarn build
       - run: npm publish --provenance
+        env:
+          NODE_AUTH_TOKEN: ""
