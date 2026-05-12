@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { RouterLink } from 'vue-router'
 import CodeBlock from '../components/CodeBlock.vue'
 
 type Section = {
@@ -19,6 +20,7 @@ const sections: Section[] = [
   { id: 'pool-enqueue', title: 'enqueue()', level: 2 },
   { id: 'pool-asyncdispose', title: 'Symbol.asyncDispose()', level: 2 },
   { id: 'resource-container', title: 'ResourceContainer', level: 1 },
+  { id: 'without-using', title: '不使用 using 关键字', level: 1 },
   { id: 'scheduler', title: 'Scheduler', level: 1 },
   { id: 'scheduler-enqueue', title: 'enqueue()', level: 2 },
   { id: 'scheduler-enqueue-all', title: 'enqueueAll()', level: 2 },
@@ -44,6 +46,13 @@ function scrollTo(id: string) {
   <div class="docs">
     <!-- Sidebar -->
     <aside class="sidebar">
+      <nav class="sidebar-page-nav">
+        <RouterLink to="/" class="page-nav-link">首页</RouterLink>
+        <RouterLink to="/playground" class="page-nav-link">Playground</RouterLink>
+        <RouterLink to="/examples" class="page-nav-link">案例</RouterLink>
+        <RouterLink to="/docs" class="page-nav-link active">文档</RouterLink>
+      </nav>
+      <div class="sidebar-divider"></div>
       <nav class="sidebar-nav">
         <template v-for="(section, i) in h1Sections" :key="section.id">
           <a
@@ -101,7 +110,7 @@ function scrollTo(id: string) {
         <CodeBlock code="import { Pool } from '@cat5th/pool.js'
 
 // 创建一个并发数为 3 的资源池
-const pool = new Pool({
+await using pool = new Pool({
   concurrency: 3,
   create: (i) => ({ id: i })
 })
@@ -110,9 +119,7 @@ const pool = new Pool({
 // using 关键字确保离开作用域时自动释放
 using resource = await pool.acquire()
 console.log(resource.value.id)
-
-// 清理整个池（等待所有资源归还后释放）
-await pool[Symbol.asyncDispose]()" />
+// 池离开作用域时自动清理" />
       </section>
 
       <!-- Pool -->
@@ -234,9 +241,19 @@ doSomething(resource.value)
       <section id="pool-asyncdispose">
         <h3>Symbol.asyncDispose()</h3>
         <p>
-          清理整个资源池。等待所有已借出的资源归还后，销毁池创建的资源并重置状态。
+          清理整个资源池。等待所有已借出的资源归还后，销毁池创建的资源并重置状态。推荐使用 <code>await using</code> 关键字实现自动清理。
         </p>
-        <CodeBlock code="// 显式调用
+        <CodeBlock code="// 推荐：使用 await using 关键字，离开作用域时自动清理
+await using pool = new Pool({
+  concurrency: 5,
+  create: (i) => createDatabaseConnection(i)
+})
+
+using conn = await pool.acquire()
+conn.query('SELECT * FROM users')
+// 离开作用域后 pool 自动被清理
+
+// 或者手动调用
 await pool[Symbol.asyncDispose]()
 
 // 或使用 using 关键字
@@ -278,6 +295,39 @@ container[Symbol.dispose]()" />
             </tr>
           </tbody>
         </table>
+      </section>
+
+      <!-- Without using -->
+      <section id="without-using">
+        <h2>不使用 using 关键字</h2>
+        <p>
+          如果你的运行时不支持 ES2024 显式资源管理，或者你更喜欢手动控制，可以通过直接调用 <code>[Symbol.dispose]()</code> 和 <code>[Symbol.asyncDispose]()</code> 来管理资源生命周期：
+        </p>
+        <CodeBlock code="import { Pool } from '@cat5th/pool.js'
+
+// 不使用 await using，需要手动清理
+const pool = new Pool({
+  concurrency: 3,
+  create: (i) => createConnection(i)
+})
+
+// 获取资源，手动释放
+const resource = await pool.acquire()
+try {
+  doSomething(resource.value)
+} finally {
+  resource[Symbol.dispose]()
+}
+
+// 池清理
+await pool[Symbol.asyncDispose]()" />
+        <div class="callout">
+          <strong>推荐做法</strong>
+          <p style="margin-top: 8px">
+            使用 <code>await using</code> 和 <code>using</code> 关键字可以确保即使发生异常资源也能被正确释放，
+            避免资源泄漏。如果你的环境支持（Node.js 22+），建议始终使用 <code>using</code> 关键字。
+          </p>
+        </div>
       </section>
 
       <!-- Scheduler -->
@@ -461,6 +511,38 @@ class ResourceContainer<T> {
   background: #fafafa;
 }
 
+.sidebar-page-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 0 8px 0;
+}
+
+.page-nav-link {
+  display: block;
+  padding: 6px 20px;
+  font-size: 14px;
+  color: #555;
+  transition: all 0.15s;
+}
+
+.page-nav-link:hover {
+  color: #667eea;
+  background: #f5f5ff;
+}
+
+.page-nav-link.active {
+  color: #667eea;
+  font-weight: 600;
+  background: #f0f0ff;
+}
+
+.sidebar-divider {
+  height: 1px;
+  background: #e8e8e8;
+  margin: 12px 20px;
+}
+
 .sidebar-nav {
   display: flex;
   flex-direction: column;
@@ -496,7 +578,8 @@ class ResourceContainer<T> {
 /* Content */
 .docs-content {
   flex: 1;
-  max-width: 800px;
+  max-width: 900px;
+  margin: 0 auto;
   padding: 40px 32px 80px;
 }
 

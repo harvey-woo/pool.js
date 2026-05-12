@@ -30,6 +30,9 @@ function closeMobile() {
           <RouterLink to="/playground" class="nav-link" :class="{ active: isActive('/playground') }" @click="closeMobile">
             Playground
           </RouterLink>
+          <RouterLink to="/examples" class="nav-link" :class="{ active: isActive('/examples') }" @click="closeMobile">
+            案例
+          </RouterLink>
           <RouterLink to="/docs" class="nav-link" :class="{ active: isActive('/docs') }" @click="closeMobile">
             文档
           </RouterLink>
@@ -46,6 +49,7 @@ function closeMobile() {
       <div v-if="mobileOpen" class="mobile-nav">
         <RouterLink to="/" class="mobile-nav-link" @click="closeMobile">首页</RouterLink>
         <RouterLink to="/playground" class="mobile-nav-link" @click="closeMobile">Playground</RouterLink>
+        <RouterLink to="/examples" class="mobile-nav-link" @click="closeMobile">案例</RouterLink>
         <RouterLink to="/docs" class="mobile-nav-link" @click="closeMobile">文档</RouterLink>
         <a href="https://github.com/harvey-woo/pool.js" class="mobile-nav-link" target="_blank">GitHub</a>
       </div>

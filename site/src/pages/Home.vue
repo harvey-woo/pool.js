@@ -108,7 +108,7 @@ import CodeBlock from '../components/CodeBlock.vue'
             <h3>基本用法</h3>
             <CodeBlock code="import { Pool } from '@cat5th/pool.js'
 
-const pool = new Pool({
+await using pool = new Pool({
   concurrency: 3,
   create: (i) => ({ id: i })
 })
@@ -117,10 +117,7 @@ const pool = new Pool({
 // 离开作用域后自动释放 (Symbol.dispose)
 using resource = await pool.acquire()
 console.log(resource.value.id)
-// resource 自动释放
-
-// 清理整个池
-await pool[Symbol.asyncDispose]()" />
+// 池离开作用域后自动清理 (Symbol.asyncDispose)" />
           </div>
           <div class="code-example">
             <h3>Scheduler</h3>
@@ -166,7 +163,7 @@ await wrapped('world')" />
 }
 
 .container {
-  max-width: 1000px;
+  max-width: 900px;
   margin: 0 auto;
   padding: 0 24px;
 }
@@ -347,6 +344,7 @@ await wrapped('world')" />
   font-size: 16px;
   font-weight: 600;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: #1a1a2e;
 }
 
 .code-example :deep(.code-block) {

@@ -2,9 +2,8 @@
 import { ref, onMounted, onUnmounted, reactive, computed } from 'vue'
 import TimelineViewer from '../components/TimelineViewer.vue'
 import TimelineHeader from '../components/TimelineHeader.vue'
-import PoolCreator from '../components/PoolCreator.vue'
 import TaskCreator from '../components/TaskCreator.vue'
-import type { Pool, Scheduler } from '../pool'
+import { Pool, Scheduler } from '../pool'
 import { type Task } from '../utils/task-utils'
 
 // Timeline data interface
@@ -263,7 +262,6 @@ interface ResourceType {
 }
 
 // Available resource types - simplified to MainThreadResource only
-// (WorkerComputeResource requires RPC infrastructure not in pool.js)
 const availableResourceTypes: ResourceType[] = [
   {
     name: 'mainthread-resource',
@@ -312,6 +310,21 @@ const currentTime = ref(0)
 const currentPool = ref<Pool<Resource> | null>(null)
 const currentScheduler = ref<Scheduler<Resource> | null>(null)
 
+// Resource list (reactive proxies stored in Pool)
+const createdResources = ref<
+  Array<{
+    name: string
+    createdAt: number
+    color: string
+    status: 'idle' | 'busy' | 'closed'
+    isPrecreated?: boolean
+  }>
+>([])
+
+// Pool creation loading state
+const isCreatingPool = ref(false)
+const createError = ref('')
+
 // Task execution config
 const taskExecutionConfig = reactive({
   selectedResourceType: 'mainthread-resource',
@@ -320,6 +333,13 @@ const taskExecutionConfig = reactive({
     minDuration: 100,
     maxDuration: 500
   } as Record<string, unknown>
+})
+
+// Pool config
+const poolConfig = reactive({
+  minDuration: '300',
+  resourceCount: 5,
+  preCreatedResourceCount: 2
 })
 
 // Computed - get current resource type and method
@@ -363,7 +383,6 @@ function initializeParameters() {
 }
 
 // Component refs
-const poolCreatorRef = ref<InstanceType<typeof PoolCreator>>()
 const taskCreatorRef = ref<InstanceType<typeof TaskCreator>>()
 const timelineViewerRef = ref<InstanceType<typeof TimelineViewer>>()
 
@@ -422,10 +441,6 @@ function createTrackingTask(taskFromCreatedTasks: Task) {
 
     this.status = 'busy'
 
-    if (poolCreatorRef.value) {
-      poolCreatorRef.value.forceUpdateResourceStatus()
-    }
-
     if (taskCreatorRef.value) {
       taskCreatorRef.value.updateTaskLists()
     }
@@ -449,10 +464,6 @@ function createTrackingTask(taskFromCreatedTasks: Task) {
 
       this.status = 'idle'
 
-      if (poolCreatorRef.value) {
-        poolCreatorRef.value.forceUpdateResourceStatus()
-      }
-
       if (taskCreatorRef.value) {
         taskCreatorRef.value.updateTaskLists()
       }
@@ -468,10 +479,6 @@ function createTrackingTask(taskFromCreatedTasks: Task) {
 
       this.status = 'idle'
 
-      if (poolCreatorRef.value) {
-        poolCreatorRef.value.forceUpdateResourceStatus()
-      }
-
       if (taskCreatorRef.value) {
         taskCreatorRef.value.updateTaskLists()
       }
@@ -479,33 +486,95 @@ function createTrackingTask(taskFromCreatedTasks: Task) {
   }
 }
 
-// Handle pool created
-function handlePoolCreated(pool: Pool<Resource>, scheduler: Scheduler<Resource>) {
-  currentPool.value = pool
-  currentScheduler.value = scheduler
-  console.log('资源池创建成功')
+// Create the pool
+async function createPool() {
+  if (isCreatingPool.value || currentPool.value) return
+  try {
+    isCreatingPool.value = true
+    createError.value = ''
+    console.log('[createPool] starting, resourceCount:', poolConfig.resourceCount, 'preCreated:', poolConfig.preCreatedResourceCount)
+    _absoluteStartTime.value = Date.now()
+    createdResources.value = []
+    timeLineData.value = []
+    startTime.value = 0
+    currentTime.value = 0
 
-  _absoluteStartTime.value = Date.now()
-  startTime.value = 0
-  currentTime.value = 0
-  if (typeof interval === 'number') clearInterval(interval)
-  interval = setInterval(() => {
-    const globalIdle = isGlobalIdle()
-    if (!globalIdle) {
-      currentTime.value = Date.now() - _absoluteStartTime.value
-    }
-  }, 100)
+    // Create pre-created resources
+    const preCreatedResources: Resource[] = await Promise.all(
+      Array.from(
+        { length: poolConfig.preCreatedResourceCount },
+        async (_, index) => {
+          const resource = await createDefaultResource(index)
+          resource.isPrecreated = true
+          resource.createdAt = 0
+          const reactiveResource = reactive(resource)
+          createdResources.value.push(reactiveResource)
+          return reactiveResource
+        }
+      )
+    )
+    console.log('[createPool] pre-created:', preCreatedResources.length, 'resources')
+
+    // Create the pool — stores reactive proxies
+    const pool = new Pool<Resource>({
+      create: async (created: number) => {
+        const resource = await createDefaultResource(created)
+        resource.createdAt = Date.now() - _absoluteStartTime.value
+        const reactiveResource = reactive(resource)
+        createdResources.value.push(reactiveResource)
+        return reactiveResource
+      },
+      concurrency: poolConfig.resourceCount,
+      resources: preCreatedResources,
+      coolDown({ deliverAt, releaseAt }) {
+        return wait(
+          poolConfig.minDuration
+            ? Math.max(0, parseInt(poolConfig.minDuration) - (releaseAt - deliverAt))
+            : 0
+        )
+      },
+      shouldDispose: true
+    })
+
+    currentPool.value = pool
+    currentScheduler.value = pool.schedule()
+    console.log('[createPool] pool created, currentPool:', !!currentPool.value, 'createdResources:', createdResources.value.length)
+
+    if (typeof interval === 'number') clearInterval(interval)
+    interval = setInterval(() => {
+      const globalIdle = isGlobalIdle()
+      if (!globalIdle) {
+        currentTime.value = Date.now() - _absoluteStartTime.value
+      }
+    }, 100)
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    createError.value = `创建资源池失败: ${msg}`
+    console.error('创建资源池失败:', error)
+    currentPool.value = null
+    currentScheduler.value = null
+  } finally {
+    isCreatingPool.value = false
+  }
 }
 
-// Handle pool destroyed
-function handlePoolDestroyed() {
-  currentPool.value = null
-  currentScheduler.value = null
-  if (interval) {
-    clearInterval(interval)
+// Destroy the pool
+async function destroyPool() {
+  if (currentPool.value) {
+    try {
+      await currentPool.value[Symbol.asyncDispose]()
+      currentPool.value = null
+      currentScheduler.value = null
+      createdResources.value = []
+      if (interval) {
+        clearInterval(interval)
+      }
+      timeLineData.value = []
+      console.log('资源池已销毁')
+    } catch (error) {
+      console.error('销毁资源池失败:', error)
+    }
   }
-  timeLineData.value = []
-  console.log('资源池已销毁')
 }
 
 // Handle task submitted
@@ -558,207 +627,297 @@ onUnmounted(async () => {
 </script>
 
 <template>
-  <div class="example-container">
-    <h2 class="example-title">Pool.js v2 - 资源池调度示例</h2>
+  <div class="playground">
+    <!-- Left panel -->
+    <aside class="playground-sidebar">
+      <!-- Scrollable config area -->
+      <div class="sidebar-content">
+        <div class="config-section">
+          <h3 class="section-title">资源配置</h3>
 
-    <!-- Resource type and method selection -->
-    <div class="selector-container">
-      <div class="resource-type-selector">
-        <h3>资源类型</h3>
-        <div class="resource-type-list">
-          <label
-            v-for="resourceType in availableResourceTypes"
-            :key="resourceType.name"
-            class="resource-type-item"
-            :class="{
-              active:
-                taskExecutionConfig.selectedResourceType === resourceType.name
-            }"
-          >
-            <input
-              v-model="taskExecutionConfig.selectedResourceType"
-              type="radio"
-              :value="resourceType.name"
-              @change="onResourceTypeChange"
-            />
-            <div class="type-info">
-              <div class="type-name">
-                {{ resourceType.description }}
-              </div>
-              <div class="type-desc">
-                {{ resourceType.methods.length }} 个可用方法
-              </div>
-            </div>
-          </label>
-        </div>
-      </div>
-
-      <div class="task-method-selector">
-        <h3>方法配置</h3>
-        <div v-if="selectedResourceType" class="method-config">
-          <div class="method-selection">
+          <!-- Resource type -->
+          <div class="resource-type-list">
             <label
-              v-for="method in selectedResourceType.methods"
-              :key="method.name"
-              class="method-item"
+              v-for="resourceType in availableResourceTypes"
+              :key="resourceType.name"
+              class="resource-type-item"
               :class="{
-                active: taskExecutionConfig.selectedMethod === method.name
+                active:
+                  taskExecutionConfig.selectedResourceType === resourceType.name
               }"
             >
               <input
-                v-model="taskExecutionConfig.selectedMethod"
+                v-model="taskExecutionConfig.selectedResourceType"
                 type="radio"
-                :value="method.name"
-                @change="onMethodChange"
+                :value="resourceType.name"
+                @change="onResourceTypeChange"
               />
-              <div class="method-info">
-                <div class="method-name">{{ method.name }}</div>
-                <div class="method-description">
-                  {{ method.description }}
+              <div class="type-info">
+                <div class="type-name">
+                  {{ resourceType.description }}
+                </div>
+                <div class="type-desc">
+                  {{ resourceType.methods.length }} 个可用方法
                 </div>
               </div>
             </label>
           </div>
 
-          <div v-if="selectedMethod" class="parameter-config">
-            <h4>参数配置</h4>
-            <div
-              v-for="param in selectedMethod.parameters"
-              :key="param.name"
-              class="config-group"
-            >
-              <label>{{ param.description }}</label>
-              <input
-                v-if="param.type === 'number'"
-                v-model.number="taskExecutionConfig.parameters[param.name]"
-                type="number"
-                :min="param.min"
-                :max="param.max"
-                :placeholder="String(param.defaultValue)"
-              />
-              <input
-                v-else-if="param.type === 'string'"
-                v-model="taskExecutionConfig.parameters[param.name]"
-                type="text"
-                :placeholder="String(param.defaultValue)"
-              />
-              <select
-                v-else-if="param.type === 'select'"
-                v-model="taskExecutionConfig.parameters[param.name]"
-              >
-                <option
-                  v-for="option in param.options"
-                  :key="option"
-                  :value="option"
-                >
-                  {{ option }}
-                </option>
-              </select>
+          <!-- Method selection -->
+          <div class="method-section">
+            <div class="method-selection">
               <label
-                v-else-if="param.type === 'boolean'"
-                class="checkbox-label"
+                v-for="method in selectedResourceType!.methods"
+                :key="method.name"
+                class="method-item"
+                :class="{
+                  active: taskExecutionConfig.selectedMethod === method.name
+                }"
               >
                 <input
-                  v-model="taskExecutionConfig.parameters[param.name]"
-                  type="checkbox"
+                  v-model="taskExecutionConfig.selectedMethod"
+                  type="radio"
+                  :value="method.name"
+                  @change="onMethodChange"
                 />
-                启用
+                <div class="method-info">
+                  <div class="method-name">{{ method.name }}</div>
+                </div>
               </label>
+            </div>
+
+            <!-- Parameters -->
+            <div v-if="selectedMethod" class="parameter-config">
+              <div
+                v-for="param in selectedMethod.parameters"
+                :key="param.name"
+                class="config-group"
+              >
+                <label>{{ param.description }}</label>
+                <input
+                  v-if="param.type === 'number'"
+                  v-model.number="taskExecutionConfig.parameters[param.name]"
+                  type="number"
+                  :min="param.min"
+                  :max="param.max"
+                  :placeholder="String(param.defaultValue)"
+                />
+                <input
+                  v-else-if="param.type === 'string'"
+                  v-model="taskExecutionConfig.parameters[param.name]"
+                  type="text"
+                  :placeholder="String(param.defaultValue)"
+                />
+                <select
+                  v-else-if="param.type === 'select'"
+                  v-model="taskExecutionConfig.parameters[param.name]"
+                >
+                  <option
+                    v-for="option in param.options"
+                    :key="option"
+                    :value="option"
+                  >
+                    {{ option }}
+                  </option>
+                </select>
+                <label
+                  v-else-if="param.type === 'boolean'"
+                  class="checkbox-label"
+                >
+                  <input
+                    v-model="taskExecutionConfig.parameters[param.name]"
+                    type="checkbox"
+                  />
+                  启用
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pool config -->
+          <div class="pool-config-form">
+            <div class="form-group">
+              <label class="form-label">冷却间隔(ms)</label>
+              <input
+                v-model="poolConfig.minDuration"
+                class="form-input"
+                type="number"
+                :step="50"
+                placeholder="300"
+              />
+            </div>
+            <div class="form-group">
+              <label class="form-label">资源数量</label>
+              <input
+                v-model.number="poolConfig.resourceCount"
+                class="form-input"
+                type="number"
+                min="1"
+                placeholder="5"
+              />
+            </div>
+            <div class="form-group">
+              <label class="form-label">预创建数量</label>
+              <input
+                v-model.number="poolConfig.preCreatedResourceCount"
+                class="form-input"
+                type="number"
+                min="0"
+                placeholder="2"
+              />
             </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <!-- Pool creator -->
-    <PoolCreator
-      ref="poolCreatorRef"
-      :create-resource="createDefaultResource"
-      @pool-created="handlePoolCreated"
-      @pool-destroyed="handlePoolDestroyed"
-    />
+      <!-- Fixed buttons at bottom -->
+      <div class="sidebar-actions">
+        <button
+          class="btn btn-primary"
+          :disabled="isCreatingPool"
+          @click="createPool"
+        >
+          {{ isCreatingPool ? '创建中...' : '创建资源池' }}
+        </button>
+        <button v-if="currentPool" class="btn btn-danger" @click="destroyPool">
+          销毁资源池
+        </button>
+      </div>
+      <div v-if="createError" class="create-error">
+        {{ createError }}
+      </div>
+    </aside>
 
-    <!-- Task creator -->
-    <TaskCreator
-      ref="taskCreatorRef"
-      :scheduler="currentScheduler"
-      :disabled="!currentPool"
-      @task-submitted="handleTaskSubmitted"
-    />
+    <!-- Right panel -->
+    <main class="playground-content">
+      <!-- Resource list -->
+      <div v-if="createdResources.length > 0" class="resource-list-section">
+        <h4 class="resource-list-title">资源列表 ({{ createdResources.length }})</h4>
+        <div class="resource-grid">
+          <div
+            v-for="(resource, index) in createdResources"
+            :key="index"
+            class="resource-item"
+            :style="{ borderLeft: `4px solid ${resource.color}` }"
+            :class="{
+              'resource-idle': resource.status === 'idle',
+              'resource-busy': resource.status === 'busy',
+              'resource-closed': resource.status === 'closed'
+            }"
+          >
+            <div class="resource-header">
+              <span class="resource-name">{{ resource.name }}</span>
+              <span
+                v-if="resource.isPrecreated"
+                class="precreated-tag"
+                title="预创建资源不会被自动销毁"
+              >
+                预创建
+              </span>
+              <span class="resource-index">#{{ index + 1 }}</span>
+            </div>
+            <div class="resource-details">
+              <span class="resource-time">
+                创建时间: {{ resource.createdAt }}ms
+              </span>
+              <span class="resource-status">
+                状态:
+                <span :class="`status-${resource.status}`">
+                  {{
+                    resource.status === 'idle'
+                      ? '空闲'
+                      : resource.status === 'busy'
+                        ? '使用中'
+                        : '已关闭'
+                  }}
+                </span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
 
-    <!-- Timeline header -->
-    <TimelineHeader
-      v-model:unit-width="timelineConfig.unitWidth"
-      v-model:auto-scroll-enabled="timelineConfig.autoScrollEnabled"
-      v-model:enable-idle-compression="timelineConfig.enableIdleCompression"
-    />
+      <!-- Task creator -->
+      <TaskCreator
+        ref="taskCreatorRef"
+        :scheduler="currentScheduler"
+        :disabled="!currentPool"
+        @task-submitted="handleTaskSubmitted"
+      />
 
-    <!-- Timeline viewer -->
-    <TimelineViewer
-      ref="timelineViewerRef"
-      :time-line-data="timeLineData"
-      :start-time="startTime"
-      :end-time="currentTime"
-      :unit-width="timelineConfig.unitWidth"
-      :auto-scroll-enabled="timelineConfig.autoScrollEnabled"
-      :enable-idle-compression="timelineConfig.enableIdleCompression"
-      :time-scale-interval="
-        parseInt(poolCreatorRef?.config.minDuration || '300')
-      "
-      @user-scrolled="() => {}"
-    />
+      <!-- Timeline header -->
+      <TimelineHeader
+        v-model:unit-width="timelineConfig.unitWidth"
+        v-model:auto-scroll-enabled="timelineConfig.autoScrollEnabled"
+        v-model:enable-idle-compression="timelineConfig.enableIdleCompression"
+      />
+
+      <!-- Timeline viewer -->
+      <TimelineViewer
+        ref="timelineViewerRef"
+        :time-line-data="timeLineData"
+        :start-time="startTime"
+        :end-time="currentTime"
+        :unit-width="timelineConfig.unitWidth"
+        :auto-scroll-enabled="timelineConfig.autoScrollEnabled"
+        :enable-idle-compression="timelineConfig.enableIdleCompression"
+        :time-scale-interval="parseInt(poolConfig.minDuration || '300')"
+        @user-scrolled="() => {}"
+      />
+    </main>
   </div>
 </template>
 
 <style scoped>
-.example-container {
-  padding: 20px;
-  max-width: 1400px;
-  margin: 0 auto;
+.playground {
+  display: flex;
+  height: calc(100vh - 60px);
+  overflow: hidden;
 }
 
-.example-title {
-  text-align: center;
-  color: #333;
-  margin-bottom: 30px;
-  font-size: 24px;
-}
-
-.selector-container {
+/* Left sidebar */
+.playground-sidebar {
+  width: 320px;
+  border-right: 1px solid #e8e8e8;
+  flex-shrink: 0;
+  background: #fafafa;
+  height: calc(100vh - 60px);
   display: flex;
   flex-direction: column;
-  gap: 30px;
-  margin-bottom: 30px;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  padding: 20px;
-  background-color: #fafafa;
-  width: 100%;
-  overflow: hidden;
 }
 
-.resource-type-selector {
+.sidebar-content {
   flex: 1;
-  min-width: 0;
-  overflow: hidden;
+  overflow-y: auto;
+  padding: 20px;
 }
 
-.resource-type-selector h3 {
-  margin: 0 0 15px 0;
-  color: #333;
-  font-size: 16px;
+.config-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.section-title {
+  margin: 0 0 12px 0;
+  color: #1a1a2e;
+  font-size: 15px;
   font-weight: 600;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e8e8e8;
 }
 
+/* Resource type list */
 .resource-type-list {
-  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .resource-type-item {
   display: flex;
   align-items: center;
-  padding: 12px;
-  margin-bottom: 8px;
+  padding: 10px 12px;
   border: 1px solid #ddd;
   border-radius: 6px;
   cursor: pointer;
@@ -767,13 +926,13 @@ onUnmounted(async () => {
 }
 
 .resource-type-item:hover {
-  border-color: #007acc;
-  background-color: #f0f8ff;
+  border-color: #667eea;
+  background-color: #f0f0ff;
 }
 
 .resource-type-item.active {
-  border-color: #007acc;
-  background-color: #e6f3ff;
+  border-color: #667eea;
+  background-color: #f0f0ff;
 }
 
 .resource-type-item input[type='radio'] {
@@ -782,12 +941,14 @@ onUnmounted(async () => {
 
 .type-info {
   flex: 1;
+  min-width: 0;
 }
 
 .type-name {
   font-weight: 500;
   color: #333;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
+  font-size: 14px;
 }
 
 .type-desc {
@@ -795,57 +956,42 @@ onUnmounted(async () => {
   color: #666;
 }
 
-.task-method-selector {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.task-method-selector h3 {
-  margin: 0 0 15px 0;
-  color: #333;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.method-config {
+/* Method selection */
+.method-section {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  width: 100%;
+  gap: 12px;
 }
 
 .method-selection {
-  border-bottom: 1px solid #e0e0e0;
-  padding-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .method-item {
   display: flex;
-  align-items: flex-start;
-  padding: 15px;
-  margin-bottom: 10px;
+  align-items: center;
+  padding: 8px 12px;
   border: 1px solid #ddd;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
   background-color: white;
-  width: 100%;
 }
 
 .method-item:hover {
-  border-color: #007acc;
-  background-color: #f0f8ff;
+  border-color: #667eea;
+  background-color: #f0f0ff;
 }
 
 .method-item.active {
-  border-color: #007acc;
-  background-color: #e6f3ff;
+  border-color: #667eea;
+  background-color: #f0f0ff;
 }
 
 .method-item input[type='radio'] {
-  margin-right: 12px;
-  margin-top: 2px;
+  margin-right: 10px;
 }
 
 .method-info {
@@ -856,70 +1002,288 @@ onUnmounted(async () => {
 .method-name {
   font-weight: 500;
   color: #333;
-  margin-bottom: 6px;
-  font-size: 14px;
-  word-break: break-word;
-}
-
-.method-description {
   font-size: 13px;
-  color: #666;
-  line-height: 1.4;
-  word-wrap: break-word;
-  white-space: normal;
 }
 
+/* Parameter config */
 .parameter-config {
-  width: 100%;
-}
-
-.parameter-config h4 {
-  margin: 0 0 15px 0;
-  color: #333;
-  font-size: 14px;
-  font-weight: 500;
+  padding: 12px;
+  background: white;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
 }
 
 .parameter-config .config-group {
-  margin-bottom: 15px;
-  width: 100%;
+  margin-bottom: 12px;
+}
+
+.parameter-config .config-group:last-child {
+  margin-bottom: 0;
 }
 
 .parameter-config .config-group label {
   display: block;
-  margin-bottom: 5px;
+  margin-bottom: 4px;
   color: #333;
   font-size: 13px;
   font-weight: 500;
-  word-wrap: break-word;
 }
 
 .parameter-config .config-group input,
 .parameter-config .config-group select {
   width: 100%;
-  max-width: 100%;
-  padding: 8px 12px;
+  padding: 6px 10px;
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 13px;
+  box-sizing: border-box;
   transition: border-color 0.2s ease;
 }
 
 .parameter-config .config-group input:focus,
 .parameter-config .config-group select:focus {
   outline: none;
-  border-color: #007acc;
-  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.1);
+  border-color: #667eea;
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
 }
 
 .parameter-config .checkbox-label {
   display: flex !important;
   align-items: center;
   font-size: 13px;
+  gap: 8px;
 }
 
 .parameter-config .checkbox-label input[type='checkbox'] {
   width: auto !important;
-  margin-right: 8px;
+}
+
+/* Pool config */
+.pool-config-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: white;
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.form-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #555;
+  margin-bottom: 4px;
+}
+
+.form-input {
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+}
+
+/* Fixed action buttons */
+.sidebar-actions {
+  padding: 16px 20px;
+  border-top: 1px solid #e8e8e8;
+  background: #fafafa;
+  display: flex;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.btn {
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background-color: #667eea;
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: #5a6fd6;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-danger {
+  background-color: #dc3545;
+  color: white;
+}
+
+.btn-danger:hover {
+  background-color: #c82333;
+}
+
+.create-error {
+  padding: 8px 20px;
+  color: #dc3545;
+  font-size: 12px;
+  background: #fff5f5;
+  border-top: 1px solid #ffe0e0;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+/* Resource list in right panel */
+.resource-list-section {
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.resource-list-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 12px 0;
+  color: #1a1a2e;
+}
+
+.resource-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.resource-item {
+  background-color: #fff;
+  border-radius: 6px;
+  padding: 12px;
+  transition: all 0.3s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.resource-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.resource-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.resource-name {
+  font-weight: 600;
+  color: #333;
+}
+
+.resource-index {
+  font-size: 12px;
+  background-color: #f0f0f0;
+  border-radius: 10px;
+  padding: 2px 6px;
+  color: #666;
+}
+
+.resource-details {
+  font-size: 13px;
+  color: #666;
+}
+
+.resource-time,
+.resource-status {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.status-idle {
+  color: #4caf50;
+}
+
+.status-busy {
+  color: #ff9800;
+}
+
+.status-closed {
+  color: #f44336;
+}
+
+.resource-item.resource-idle {
+  border-left-color: #4caf50;
+}
+
+.resource-item.resource-busy {
+  border-left-color: #ff9800;
+}
+
+.resource-item.resource-closed {
+  border-left-color: #f44336;
+  opacity: 0.7;
+}
+
+.precreated-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #2196f3;
+  color: white;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: bold;
+  padding: 2px 6px;
+  margin-left: 8px;
+  cursor: help;
+}
+
+/* Right content */
+.playground-content {
+  flex: 1;
+  padding: 20px;
+  min-width: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .playground {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .playground-sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid #e8e8e8;
+    max-height: 50vh;
+    height: auto;
+  }
+
+  .sidebar-actions {
+    position: static;
+  }
+
+  .playground-content {
+    overflow-y: visible;
+  }
 }
 </style>

@@ -44,7 +44,7 @@ yarn add @cat5th/pool.js
 ```javascript
 import { Pool } from '@cat5th/pool.js';
 
-const pool = new Pool({
+await using pool = new Pool({
   concurrency: 3,
   create: (i) => ({ id: i })
 });
@@ -53,9 +53,7 @@ const pool = new Pool({
 // 离开作用域时资源自动释放 (Symbol.dispose)
 using resource = await pool.acquire();
 console.log(resource.value.id);
-
-// 清理整个池（等待所有借出的资源归还后再清理）
-await pool[Symbol.asyncDispose]();
+// 池离开作用域时自动清理 (Symbol.asyncDispose)
 ```
 
 使用 Scheduler 进行任务调度：
@@ -222,10 +220,21 @@ const pool = new Pool({
 
 ### Symbol.asyncDispose
 
-清理整个资源池——等待所有借出的资源归还后，销毁池创建的资源并重置状态：
+清理整个资源池——等待所有借出的资源归还后，销毁池创建的资源并重置状态。推荐使用 `await using` 实现自动清理：
 
 ```javascript
-await pool[Symbol.asyncDispose]();
+// 推荐：离开作用域时自动清理
+await using pool = new Pool({
+  concurrency: 5,
+  create: (i) => createDatabaseConnection(i)
+});
+
+using conn = await pool.acquire();
+conn.query('SELECT 1')
+// 池在这里自动被清理
+
+// 或者手动调用
+await pool[Symbol.asyncDispose]()
 ```
 
 ## 感谢

@@ -46,7 +46,7 @@ Create a resource pool with a concurrency limit:
 ```javascript
 import { Pool } from '@cat5th/pool.js';
 
-const pool = new Pool({
+await using pool = new Pool({
   concurrency: 3,
   create: (i) => ({ id: i })
 });
@@ -55,9 +55,7 @@ const pool = new Pool({
 // The resource is automatically released when leaving scope (Symbol.dispose)
 using resource = await pool.acquire();
 console.log(resource.value.id);
-
-// Clean up the entire pool (waits for all borrowed resources to return)
-await pool[Symbol.asyncDispose]();
+// Pool is automatically cleaned up when leaving scope (Symbol.asyncDispose)
 ```
 
 Use the Scheduler for task-based execution:
@@ -226,10 +224,21 @@ const pool = new Pool({
 
 ### Symbol.asyncDispose
 
-Clean up the pool — waits for all borrowed resources to return, then disposes pool-created resources:
+Clean up the pool — waits for all borrowed resources to return, then disposes pool-created resources. Best used with `await using` for automatic cleanup:
 
 ```javascript
-await pool[Symbol.asyncDispose]();
+// Recommended: automatic cleanup when leaving scope
+await using pool = new Pool({
+  concurrency: 5,
+  create: (i) => createDatabaseConnection(i)
+});
+
+using conn = await pool.acquire();
+conn.query('SELECT 1')
+// Pool is automatically disposed here
+
+// Or call manually if needed
+await pool[Symbol.asyncDispose]()
 ```
 
 ## Thanks
