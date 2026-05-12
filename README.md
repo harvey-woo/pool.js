@@ -234,7 +234,7 @@ await using pool = new Pool({
 });
 
 using conn = await pool.acquire();
-conn.query('SELECT 1')
+conn.value.query('SELECT 1');
 // Pool is automatically disposed here
 
 // Or call manually if needed

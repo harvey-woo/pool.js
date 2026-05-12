@@ -250,7 +250,7 @@ await using pool = new Pool({
 })
 
 using conn = await pool.acquire()
-conn.query('SELECT * FROM users')
+conn.value.query('SELECT * FROM users')
 // 离开作用域后 pool 自动被清理
 
 // 或者手动调用

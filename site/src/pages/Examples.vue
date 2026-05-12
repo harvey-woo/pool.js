@@ -61,7 +61,7 @@ function scrollTo(id: string) {
           <div class="featured-content">
             <div class="featured-info">
               <h2>
-                <a href="https://github.com/harvey-woo/rate-proxy" target="_blank" rel="noopener">
+                <a href="https://rate-proxy.cat5th.com" target="_blank" rel="noopener">
                   rate-proxy
                   <span class="external-link">↗</span>
                 </a>
@@ -77,8 +77,8 @@ function scrollTo(id: string) {
               </div>
             </div>
             <div class="featured-actions">
-              <a href="https://github.com/harvey-woo/rate-proxy" target="_blank" rel="noopener" class="btn btn-primary">
-                GitHub
+              <a href="https://rate-proxy.cat5th.com" target="_blank" rel="noopener" class="btn btn-primary">
+                访问网站
               </a>
               <a href="https://www.npmjs.com/package/@cat5th/rate-proxy" target="_blank" rel="noopener" class="btn btn-ghost">
                 npm
@@ -162,7 +162,7 @@ server.listen(8080)" lang="javascript" />
 
   // acquire + using
   using conn = await pool.acquire()
-  const user = await conn.get('user:1')
+  const user = await conn.value.get('user:1')
 
   // 离开作用域时 pool 自动清理
 }" lang="javascript" />

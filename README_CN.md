@@ -230,7 +230,7 @@ await using pool = new Pool({
 });
 
 using conn = await pool.acquire();
-conn.query('SELECT 1')
+conn.value.query('SELECT 1');
 // 池在这里自动被清理
 
 // 或者手动调用
