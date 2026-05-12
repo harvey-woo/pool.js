@@ -83,6 +83,33 @@ const wrapped = scheduler.wrap(work);
 await wrapped('world');
 ```
 
+## Real World Example
+
+**rate-proxy** — a rate-limited HTTP reverse proxy built on top of `@cat5th/pool.js`:
+
+```javascript
+import { Pool } from '@cat5th/pool.js';
+import { createServer } from 'node:http';
+
+const CONCURRENCY = 5;
+const pool = new Pool(CONCURRENCY);
+const scheduler = pool.schedule();
+
+const server = createServer(async (req, res) => {
+  await scheduler.enqueue(async function () {
+    const response = await fetch(`https://upstream.api${req.url}`, {
+      method: req.method,
+      headers: req.headers,
+      body: req,
+    });
+    res.writeHead(response.status);
+    response.body.pipeTo(res);
+  });
+});
+```
+
+See [@cat5th/rate-proxy](https://github.com/harvey-woo/rate-proxy) for the full implementation.
+
 ## Documentation
 
 ### Pool

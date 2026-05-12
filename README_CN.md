@@ -81,6 +81,33 @@ const wrapped = scheduler.wrap(work);
 await wrapped('world');
 ```
 
+## 实战案例
+
+**rate-proxy** — 基于 `@cat5th/pool.js` 构建的限流反向代理：
+
+```javascript
+import { Pool } from '@cat5th/pool.js';
+import { createServer } from 'node:http';
+
+const CONCURRENCY = 5;
+const pool = new Pool(CONCURRENCY);
+const scheduler = pool.schedule();
+
+const server = createServer(async (req, res) => {
+  await scheduler.enqueue(async function () {
+    const response = await fetch(`https://upstream.api${req.url}`, {
+      method: req.method,
+      headers: req.headers,
+      body: req,
+    });
+    res.writeHead(response.status);
+    response.body.pipeTo(res);
+  });
+});
+```
+
+完整实现见 [@cat5th/rate-proxy](https://github.com/harvey-woo/rate-proxy)。
+
 ## 文档
 
 ### 创建资源池
