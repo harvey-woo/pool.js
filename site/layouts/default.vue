@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import {
   IconSwimming,
+  IconBrandNpm,
   IconMenu,
   IconX,
   IconBrandGithub,
-  IconStarFilled
+  IconStarFilled,
+  IconDownload
 } from '@tabler/icons-vue'
 
 const { t, locale } = useI18n()
@@ -13,6 +15,7 @@ const route = useRoute()
 
 const mobileOpen = ref(false)
 const githubStars = ref<string | null>(null)
+const npmDownloads = ref<string | null>(null)
 
 async function fetchGitHubStars() {
   try {
@@ -24,8 +27,19 @@ async function fetchGitHubStars() {
   }
 }
 
+async function fetchNpmDownloads() {
+  try {
+    const res = await fetch('https://api.npmjs.org/downloads/point/last-week/@cat5th/pool.js')
+    const data = await res.json()
+    npmDownloads.value = String(data.downloads)
+  } catch {
+    // ignore
+  }
+}
+
 onMounted(() => {
   fetchGitHubStars()
+  fetchNpmDownloads()
 })
 
 function closeMobile() {
@@ -66,6 +80,11 @@ function isActive(path: string) {
             <IconBrandGithub class="github-icon" />
             <span v-if="githubStars !== null" class="github-count">{{ githubStars }}</span>
             <IconStarFilled class="github-star" />
+          </a>
+          <a href="https://www.npmjs.com/package/@cat5th/pool.js" target="_blank" rel="noopener" class="npm-badge" aria-label="npm">
+            <IconBrandNpm class="npm-icon" />
+            <span v-if="npmDownloads !== null" class="npm-count">{{ npmDownloads }}</span>
+            <IconDownload class="npm-dl" />
           </a>
           <LangSwitcher />
         </div>
@@ -256,6 +275,40 @@ code {
   width: 12px;
   height: 12px;
   color: #fbbf24;
+}
+
+.npm-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #cb3837;
+  color: #fff;
+  text-decoration: none;
+  padding: 4px 10px 4px 8px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.npm-badge:hover {
+  background: #b32f2e;
+}
+
+.npm-icon {
+  width: 16px;
+  height: 16px;
+  color: #fff;
+}
+
+.npm-count {
+  color: #fff;
+}
+
+.npm-dl {
+  width: 12px;
+  height: 12px;
+  color: #fff;
 }
 
 .mobile-lang-switcher {

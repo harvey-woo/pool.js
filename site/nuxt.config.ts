@@ -1,6 +1,11 @@
 export default defineNuxtConfig({
   devtools: { enabled: true },
   ssr: true,
+  app: {
+    head: {
+      link: [],
+    },
+  },
   modules: ['@nuxtjs/i18n'],
   i18n: {
     defaultLocale: 'en',

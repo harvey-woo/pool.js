@@ -148,13 +148,13 @@ console.log(resource.value.id)
             <h3>{{ $t('home.schedulerTitle') }}</h3>
             <CodeBlock code="const pool = new Pool({
   concurrency: 2,
-  create: (i) => \`worker-\${i}\`
+  create: (i) => `worker-${i}`
 })
 
 const scheduler = pool.schedule()
 
 function work(this: string, data: string) {
-  console.log(\`\${this} processing: \${data}\`)
+  console.log(`${this} processing: ${data}`)
   return data.toUpperCase()
 }
 
