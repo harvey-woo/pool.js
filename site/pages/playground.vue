@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, reactive, computed } from 'vue'
-import TimelineViewer from '../components/TimelineViewer.vue'
-import TimelineHeader from '../components/TimelineHeader.vue'
-import TaskCreator from '../components/TaskCreator.vue'
-import { Pool, Scheduler } from '../pool'
-import { type Task } from '../utils/task-utils'
+import { Pool, Scheduler } from '~/pool'
+import { type Task } from '~/utils/task-utils'
 
 // Timeline data interface
 interface TimeLineData {
@@ -256,7 +253,7 @@ class MainThreadResource implements Resource {
 // Resource type definition
 interface ResourceType {
   name: string
-  description: string
+  descriptionKey: string
   createResource: (name: string, color: string) => Promise<Resource>
   methods: TaskMethod[]
 }
@@ -265,7 +262,7 @@ interface ResourceType {
 const availableResourceTypes: ResourceType[] = [
   {
     name: 'mainthread-resource',
-    description: '主线程资源',
+    descriptionKey: 'playground.mainThreadResource',
     createResource: async (name: string, color: string) => {
       return new MainThreadResource(name, color)
     },
@@ -354,6 +351,21 @@ const selectedMethod = computed(() => {
     (method) => method.name === taskExecutionConfig.selectedMethod
   )
 })
+
+// Parameter label mapping for i18n
+const paramLabelMap: Record<string, string> = {
+  minDuration: 'playground.paramMinDuration',
+  maxDuration: 'playground.paramMaxDuration',
+  failureRate: 'playground.paramFailureRate',
+  iterations: 'playground.paramIterations',
+  batchSize: 'playground.paramBatchSize',
+  taskDuration: 'playground.paramTaskDuration'
+}
+
+function getParamLabel(paramName: string): string {
+  const key = paramLabelMap[paramName]
+  return key ? useI18n().t(key) : paramName
+}
 
 // Handle resource type change
 function onResourceTypeChange() {
@@ -627,13 +639,14 @@ onUnmounted(async () => {
 </script>
 
 <template>
+  <ClientOnly>
   <div class="playground">
     <!-- Left panel -->
     <aside class="playground-sidebar">
       <!-- Scrollable config area -->
       <div class="sidebar-content">
         <div class="config-section">
-          <h3 class="section-title">资源配置</h3>
+          <h3 class="section-title">{{ $t('playground.resourceConfig') }}</h3>
 
           <!-- Resource type -->
           <div class="resource-type-list">
@@ -654,10 +667,10 @@ onUnmounted(async () => {
               />
               <div class="type-info">
                 <div class="type-name">
-                  {{ resourceType.description }}
+                  {{ $t(resourceType.descriptionKey) }}
                 </div>
                 <div class="type-desc">
-                  {{ resourceType.methods.length }} 个可用方法
+                  {{ resourceType.methods.length }} {{ $t('playground.availableMethods') }}
                 </div>
               </div>
             </label>
@@ -693,7 +706,7 @@ onUnmounted(async () => {
                 :key="param.name"
                 class="config-group"
               >
-                <label>{{ param.description }}</label>
+                <label>{{ getParamLabel(param.name) }}</label>
                 <input
                   v-if="param.type === 'number'"
                   v-model.number="taskExecutionConfig.parameters[param.name]"
@@ -728,7 +741,7 @@ onUnmounted(async () => {
                     v-model="taskExecutionConfig.parameters[param.name]"
                     type="checkbox"
                   />
-                  启用
+                  {{ $t('playground.enable') }}
                 </label>
               </div>
             </div>
@@ -737,7 +750,7 @@ onUnmounted(async () => {
           <!-- Pool config -->
           <div class="pool-config-form">
             <div class="form-group">
-              <label class="form-label">冷却间隔(ms)</label>
+              <label class="form-label">{{ $t('playground.coolDownInterval') }}</label>
               <input
                 v-model="poolConfig.minDuration"
                 class="form-input"
@@ -747,7 +760,7 @@ onUnmounted(async () => {
               />
             </div>
             <div class="form-group">
-              <label class="form-label">资源数量</label>
+              <label class="form-label">{{ $t('playground.resourceCount') }}</label>
               <input
                 v-model.number="poolConfig.resourceCount"
                 class="form-input"
@@ -757,7 +770,7 @@ onUnmounted(async () => {
               />
             </div>
             <div class="form-group">
-              <label class="form-label">预创建数量</label>
+              <label class="form-label">{{ $t('playground.preCreatedCount') }}</label>
               <input
                 v-model.number="poolConfig.preCreatedResourceCount"
                 class="form-input"
@@ -777,10 +790,10 @@ onUnmounted(async () => {
           :disabled="isCreatingPool"
           @click="createPool"
         >
-          {{ isCreatingPool ? '创建中...' : '创建资源池' }}
+          {{ isCreatingPool ? $t('playground.creatingPoolBtn') : $t('playground.createPoolBtn') }}
         </button>
         <button v-if="currentPool" class="btn btn-danger" @click="destroyPool">
-          销毁资源池
+          {{ $t('playground.destroyPoolBtn') }}
         </button>
       </div>
       <div v-if="createError" class="create-error">
@@ -792,7 +805,7 @@ onUnmounted(async () => {
     <main class="playground-content">
       <!-- Resource list -->
       <div v-if="createdResources.length > 0" class="resource-list-section">
-        <h4 class="resource-list-title">资源列表 ({{ createdResources.length }})</h4>
+        <h4 class="resource-list-title">{{ $t('playground.resourceListTitle') }} ({{ createdResources.length }})</h4>
         <div class="resource-grid">
           <div
             v-for="(resource, index) in createdResources"
@@ -807,28 +820,28 @@ onUnmounted(async () => {
           >
             <div class="resource-header">
               <span class="resource-name">{{ resource.name }}</span>
+              <span class="resource-index">#{{ index + 1 }}</span>
               <span
                 v-if="resource.isPrecreated"
                 class="precreated-tag"
-                title="预创建资源不会被自动销毁"
+                :title="$t('playground.precreatedTooltip')"
               >
-                预创建
+                P
               </span>
-              <span class="resource-index">#{{ index + 1 }}</span>
             </div>
             <div class="resource-details">
               <span class="resource-time">
-                创建时间: {{ resource.createdAt }}ms
+                {{ $t('playground.createdTime') }}: {{ resource.createdAt }}ms
               </span>
               <span class="resource-status">
-                状态:
+                {{ $t('playground.status') }}:
                 <span :class="`status-${resource.status}`">
                   {{
                     resource.status === 'idle'
-                      ? '空闲'
+                      ? $t('playground.statusIdle')
                       : resource.status === 'busy'
-                        ? '使用中'
-                        : '已关闭'
+                        ? $t('playground.statusBusy')
+                        : $t('playground.statusClosed')
                   }}
                 </span>
               </span>
@@ -866,6 +879,7 @@ onUnmounted(async () => {
       />
     </main>
   </div>
+  </ClientOnly>
 </template>
 
 <style scoped>
@@ -1185,22 +1199,27 @@ onUnmounted(async () => {
 
 .resource-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 6px;
   margin-bottom: 8px;
+  flex-wrap: nowrap;
 }
 
 .resource-name {
   font-weight: 600;
   color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .resource-index {
-  font-size: 12px;
+  font-size: 11px;
   background-color: #f0f0f0;
   border-radius: 10px;
-  padding: 2px 6px;
+  padding: 1px 6px;
   color: #666;
+  flex-shrink: 0;
 }
 
 .resource-details {
@@ -1245,11 +1264,11 @@ onUnmounted(async () => {
   justify-content: center;
   background-color: #2196f3;
   color: white;
-  border-radius: 12px;
+  border-radius: 10px;
   font-size: 10px;
   font-weight: bold;
-  padding: 2px 6px;
-  margin-left: 8px;
+  padding: 1px 5px;
+  flex-shrink: 0;
   cursor: help;
 }
 

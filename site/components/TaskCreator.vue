@@ -288,12 +288,12 @@ defineExpose({
 
 <template>
   <div class="task-creator">
-    <h3 class="section-title">任务创建器</h3>
+    <h3 class="section-title">{{ $t('taskCreator.title') }}</h3>
 
     <!-- Actions and auto-create config -->
     <div class="task-actions">
       <div class="form-group">
-        <label class="form-label">每批任务数量</label>
+        <label class="form-label">{{ $t('taskCreator.batchSizeLabel') }}</label>
         <input
           v-model.number="config.taskCount"
           class="form-input"
@@ -308,7 +308,7 @@ defineExpose({
         class="btn btn-primary"
         @click="createTasks"
       >
-        {{ isCreating ? '创建中...' : `手动创建 ${config.taskCount} 个任务` }}
+        {{ isCreating ? $t('taskCreator.creatingBtn') : `${$t('taskCreator.createBtn', { count: config.taskCount })}` }}
       </button>
 
       <div class="auto-create-controls">
@@ -320,11 +320,11 @@ defineExpose({
             @change="onAutoCreateToggle"
           />
           <span class="checkmark"></span>
-          自动创建
+          {{ $t('taskCreator.autoCreate') }}
         </label>
 
         <div class="interval-input">
-          <label class="form-label">间隔(ms)</label>
+          <label class="form-label">{{ $t('taskCreator.intervalLabel') }}</label>
           <input
             v-model.number="config.autoCreateInterval"
             class="form-input"
@@ -341,7 +341,7 @@ defineExpose({
         class="btn btn-secondary"
         @click="clearTasks"
       >
-        清空任务列表
+        {{ $t('taskCreator.clearBtn') }}
       </button>
     </div>
 
@@ -349,36 +349,36 @@ defineExpose({
     <div v-if="totalTasks > 0" class="task-display-container">
       <!-- Left: task statistics -->
       <div class="task-stats">
-        <h4 class="stats-title">任务统计</h4>
+        <h4 class="stats-title">{{ $t('taskCreator.statsTitle') }}</h4>
 
         <div class="main-stats">
           <div class="stat-row">
             <div class="stat-item compact">
-              <span class="stat-label">总计</span>
+              <span class="stat-label">{{ $t('taskCreator.statTotal') }}</span>
               <span class="stat-value stat-total">{{ totalTasks }}</span>
             </div>
             <div class="stat-item compact">
-              <span class="stat-label">等待</span>
+              <span class="stat-label">{{ $t('taskCreator.statPending') }}</span>
               <span class="stat-value stat-pending">{{ pendingCount }}</span>
             </div>
             <div class="stat-item compact">
-              <span class="stat-label">运行</span>
+              <span class="stat-label">{{ $t('taskCreator.statRunning') }}</span>
               <span class="stat-value stat-running">{{ runningCount }}</span>
             </div>
           </div>
           <div class="stat-row">
             <div class="stat-item compact">
-              <span class="stat-label">完成</span>
+              <span class="stat-label">{{ $t('taskCreator.statCompleted') }}</span>
               <span class="stat-value stat-completed">{{
                 completedCount
               }}</span>
             </div>
             <div class="stat-item compact">
-              <span class="stat-label">失败</span>
+              <span class="stat-label">{{ $t('taskCreator.statFailed') }}</span>
               <span class="stat-value stat-failed">{{ failedCount }}</span>
             </div>
             <div class="stat-item compact">
-              <span class="stat-label">进度</span>
+              <span class="stat-label">{{ $t('taskCreator.statProgress') }}</span>
               <span class="stat-value stat-progress">
                 {{
                   Math.round(
@@ -404,29 +404,29 @@ defineExpose({
 
         <!-- Speed stats -->
         <div class="speed-stats">
-          <h5 class="speed-title">性能指标</h5>
+          <h5 class="speed-title">{{ $t('taskCreator.performanceTitle') }}</h5>
           <div class="speed-grid">
             <div class="speed-item">
-              <span class="speed-label">平均耗时</span>
+              <span class="speed-label">{{ $t('taskCreator.avgDuration') }}</span>
               <span class="speed-value">{{
                 formatDuration(averageTaskDuration)
               }}</span>
             </div>
             <div class="speed-item">
-              <span class="speed-label">最快</span>
+              <span class="speed-label">{{ $t('taskCreator.fastest') }}</span>
               <span class="speed-value">{{
                 formatDuration(fastestTaskDuration)
               }}</span>
             </div>
             <div class="speed-item">
-              <span class="speed-label">最慢</span>
+              <span class="speed-label">{{ $t('taskCreator.slowest') }}</span>
               <span class="speed-value">{{
                 formatDuration(slowestTaskDuration)
               }}</span>
             </div>
             <div class="speed-item">
-              <span class="speed-label">速率</span>
-              <span class="speed-value">{{ taskCompletionRate }}/分钟</span>
+              <span class="speed-label">{{ $t('taskCreator.rate') }}</span>
+              <span class="speed-value">{{ taskCompletionRate }}{{ $t('taskCreator.rateUnit') }}</span>
             </div>
           </div>
         </div>
@@ -435,11 +435,11 @@ defineExpose({
       <!-- Right: task list -->
       <div class="recent-tasks">
         <div class="recent-header">
-          <h4 class="recent-title">任务列表 ({{ filteredTasks.length }})</h4>
+          <h4 class="recent-title">{{ $t('taskCreator.taskListTitle') }} ({{ filteredTasks.length }})</h4>
           <label class="form-checkbox task-filter">
             <input v-model="showCompleted" type="checkbox" />
             <span class="checkmark"></span>
-            显示完成的
+            {{ $t('taskCreator.showCompleted') }}
           </label>
         </div>
         <div class="task-list">
@@ -460,21 +460,21 @@ defineExpose({
               <span class="task-status" :class="`status-${task.status}`">
                 {{
                   task.status === 'pending'
-                    ? '等待中'
+                    ? $t('taskCreator.statusPending')
                     : task.status === 'running'
-                      ? '运行中'
+                      ? $t('taskCreator.statusRunning')
                       : task.status === 'completed'
-                        ? '已完成'
-                        : '失败'
+                        ? $t('taskCreator.statusCompleted')
+                        : $t('taskCreator.statusFailed')
                 }}
               </span>
             </div>
             <div class="task-details">
               <div v-if="task.resourceName" class="task-resource">
-                使用资源: {{ task.resourceName }}
+                {{ $t('taskCreator.useResource') }}: {{ task.resourceName }}
               </div>
               <div v-if="task.startTime && task.endTime" class="task-time">
-                实际耗时: {{ task.endTime - task.startTime }}ms
+                {{ $t('taskCreator.actualTime') }}: {{ task.endTime - task.startTime }}ms
               </div>
             </div>
           </div>

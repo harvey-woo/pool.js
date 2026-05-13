@@ -7,5 +7,5 @@ export {
   type CoolDown,
   type PoolOptions,
   type Task
-} from '../../src/index.ts'
+} from '../src/index'
 export { ResourceContainer } from '../../src/index.ts'

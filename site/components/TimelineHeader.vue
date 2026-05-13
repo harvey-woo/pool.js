@@ -9,7 +9,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  title: '时间轴'
+  title: undefined
 })
 
 const emit = defineEmits<{
@@ -36,10 +36,10 @@ const internalEnableIdleCompression = computed({
 
 <template>
   <div class="timeline-header">
-    <h3>{{ title }}</h3>
+    <h3>{{ title ?? $t('timelineHeader.defaultTitle') }}</h3>
     <div class="timeline-controls">
       <div class="unit-width-control">
-        <label for="unit-width-slider">时间缩放:</label>
+        <label for="unit-width-slider">{{ $t('timelineHeader.zoomLabel') }}:</label>
         <input
           id="unit-width-slider"
           v-model.number="internalUnitWidth"
@@ -53,11 +53,11 @@ const internalEnableIdleCompression = computed({
       </div>
       <label class="auto-scroll-toggle">
         <input v-model="internalAutoScrollEnabled" type="checkbox" />
-        自动滚动到最新
+        {{ $t('timelineHeader.autoScroll') }}
       </label>
       <label class="idle-compression-toggle">
         <input v-model="internalEnableIdleCompression" type="checkbox" />
-        启用空闲区间压缩
+        {{ $t('timelineHeader.enableIdleCompression') }}
       </label>
     </div>
   </div>

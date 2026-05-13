@@ -1,6 +1,15 @@
 <script setup lang="ts">
-import { RouterLink } from 'vue-router'
-import CodeBlock from '../components/CodeBlock.vue'
+import CodeBlock from '~/components/CodeBlock.vue'
+import {
+  IconTarget,
+  IconListDetails,
+  IconClock,
+  IconSettings,
+  IconPackage,
+  IconHourglass
+} from '@tabler/icons-vue'
+
+const localePath = useLocalePath()
 </script>
 
 <template>
@@ -9,13 +18,19 @@ import CodeBlock from '../components/CodeBlock.vue'
     <section class="hero">
       <div class="hero-content">
         <h1 class="hero-title">
-          🏊 Pool.js
+          {{ $t('home.heroTitle') }}
         </h1>
         <p class="hero-subtitle">
-          轻量级资源池调度器，支持 <code>Scheduler</code>、<code>CoolDown</code> 和显式资源管理。
+          <i18n-t keypath="home.heroSubtitle" tag="span">
+            <template #scheduler><code>Scheduler</code></template>
+            <template #coolDown><code>CoolDown</code></template>
+          </i18n-t>
         </p>
         <p class="hero-version">
-          基于 <code>Symbol.dispose</code> / <code>Symbol.asyncDispose</code> 的 ES2024 显式资源管理方案。
+          <i18n-t keypath="home.heroVersion" tag="span">
+            <template #dispose><code>Symbol.dispose</code></template>
+            <template #asyncDispose><code>Symbol.asyncDispose</code></template>
+          </i18n-t>
         </p>
         <div class="badges">
           <a href="https://www.npmjs.com/package/@cat5th/pool.js" target="_blank" rel="noopener">
@@ -35,14 +50,14 @@ import CodeBlock from '../components/CodeBlock.vue'
           </a>
         </div>
         <div class="hero-actions">
-          <RouterLink to="/playground" class="btn btn-primary">
-            在线演示 →
-          </RouterLink>
-          <RouterLink to="/docs" class="btn btn-secondary">
-            查看文档
-          </RouterLink>
+          <NuxtLink :to="localePath('/playground')" class="btn btn-primary">
+            {{ $t('home.demoBtn') }}
+          </NuxtLink>
+          <NuxtLink :to="localePath('/docs')" class="btn btn-secondary">
+            {{ $t('home.docsBtn') }}
+          </NuxtLink>
           <a href="https://github.com/harvey-woo/pool.js" class="btn btn-ghost" target="_blank" rel="noopener">
-            GitHub
+            {{ $t('nav.github') }}
           </a>
         </div>
       </div>
@@ -52,7 +67,7 @@ import CodeBlock from '../components/CodeBlock.vue'
     <section class="install-section">
       <div class="container">
         <div class="install-box">
-          <span class="install-label">安装</span>
+          <span class="install-label">{{ $t('home.installLabel') }}</span>
           <div class="install-code">
             <code>npm install @cat5th/pool.js</code>
           </div>
@@ -63,37 +78,47 @@ import CodeBlock from '../components/CodeBlock.vue'
     <!-- Features -->
     <section class="features">
       <div class="container">
-        <h2 class="section-title">特性</h2>
+        <h2 class="section-title">{{ $t('home.featuresTitle') }}</h2>
         <div class="feature-grid">
           <div class="feature-card">
-            <div class="feature-icon">🎯</div>
-            <h3>显式资源管理</h3>
-            <p>基于 ES2024 <code>Symbol.dispose</code>，资源在离开作用域时自动释放，避免资源泄漏。</p>
+            <div class="feature-icon"><IconTarget /></div>
+            <h3>{{ $t('home.featureExplicitManagement') }}</h3>
+            <i18n-t keypath="home.featureExplicitManagementDesc" tag="p">
+              <template #dispose><code>Symbol.dispose</code></template>
+            </i18n-t>
           </div>
           <div class="feature-card">
-            <div class="feature-icon">📋</div>
-            <h3>任务调度器</h3>
-            <p><code>Scheduler</code> 将任务自动分配给空闲资源，支持 <code>wrap</code> 和 <code>enqueue</code> 两种调用方式。</p>
+            <div class="feature-icon"><IconListDetails /></div>
+            <h3>{{ $t('home.featureScheduler') }}</h3>
+            <i18n-t keypath="home.featureSchedulerDesc" tag="p">
+              <template #Scheduler><code>Scheduler</code></template>
+              <template #wrap><code>wrap</code></template>
+              <template #enqueue><code>enqueue</code></template>
+            </i18n-t>
           </div>
           <div class="feature-card">
-            <div class="feature-icon">⏱️</div>
-            <h3>冷却机制</h3>
-            <p><code>CoolDown</code> 回调在资源释放后控制再次可用的时间间隔，实现速率限制。</p>
+            <div class="feature-icon"><IconClock /></div>
+            <h3>{{ $t('home.featureCoolDown') }}</h3>
+            <i18n-t keypath="home.featureCoolDownDesc" tag="p">
+              <template #CoolDown><code>CoolDown</code></template>
+            </i18n-t>
           </div>
           <div class="feature-card">
-            <div class="feature-icon">🔧</div>
-            <h3>灵活配置</h3>
-            <p>支持工厂函数创建、预创建资源、自定义并发数，以及异步销毁清理。</p>
+            <div class="feature-icon"><IconSettings /></div>
+            <h3>{{ $t('home.featureConfig') }}</h3>
+            <p>{{ $t('home.featureConfigDesc') }}</p>
           </div>
           <div class="feature-card">
-            <div class="feature-icon">📦</div>
-            <h3>零依赖</h3>
-            <p>纯 TypeScript 实现，无任何外部依赖，体积小巧，开箱即用。</p>
+            <div class="feature-icon"><IconPackage /></div>
+            <h3>{{ $t('home.featureZeroDeps') }}</h3>
+            <p>{{ $t('home.featureZeroDepsDesc') }}</p>
           </div>
           <div class="feature-card">
-            <div class="feature-icon">⏳</div>
-            <h3>异步清理</h3>
-            <p><code>Symbol.asyncDispose</code> 等待所有资源归还后再清理，确保异步资源的完整生命周期。</p>
+            <div class="feature-icon"><IconHourglass /></div>
+            <h3>{{ $t('home.featureAsyncDispose') }}</h3>
+            <i18n-t keypath="home.featureAsyncDisposeDesc" tag="p">
+              <template #asyncDispose><code>Symbol.asyncDispose</code></template>
+            </i18n-t>
           </div>
         </div>
       </div>
@@ -102,10 +127,10 @@ import CodeBlock from '../components/CodeBlock.vue'
     <!-- Quick Start -->
     <section class="quick-start">
       <div class="container">
-        <h2 class="section-title">快速开始</h2>
+        <h2 class="section-title">{{ $t('home.quickStartTitle') }}</h2>
         <div class="code-blocks">
           <div class="code-example">
-            <h3>基本用法</h3>
+            <h3>{{ $t('home.basicUsage') }}</h3>
             <CodeBlock code="import { Pool } from '@cat5th/pool.js'
 
 await using pool = new Pool({
@@ -113,30 +138,30 @@ await using pool = new Pool({
   create: (i) => ({ id: i })
 })
 
-// acquire() 返回 ResourceContainer
-// 离开作用域后自动释放 (Symbol.dispose)
+// acquire() returns a ResourceContainer
+// Auto released when leaving scope (Symbol.dispose)
 using resource = await pool.acquire()
 console.log(resource.value.id)
-// 池离开作用域后自动清理 (Symbol.asyncDispose)" />
+// Pool auto cleanup when leaving scope (Symbol.asyncDispose)" />
           </div>
           <div class="code-example">
-            <h3>Scheduler</h3>
+            <h3>{{ $t('home.schedulerTitle') }}</h3>
             <CodeBlock code="const pool = new Pool({
   concurrency: 2,
-  create: (i) => `worker-${i}`
+  create: (i) => \`worker-\${i}\`
 })
 
 const scheduler = pool.schedule()
 
 function work(this: string, data: string) {
-  console.log(`${this} processing: ${data}`)
+  console.log(\`\${this} processing: \${data}\`)
   return data.toUpperCase()
 }
 
-// 自动调度到可用资源
+// Auto dispatched to available resource
 const result = await scheduler.enqueue(work, 'hello')
 
-// 或者用 wrap 包装
+// Or use wrap to wrap the function
 const wrapped = scheduler.wrap(work)
 await wrapped('world')" />
           </div>
@@ -147,11 +172,11 @@ await wrapped('world')" />
     <!-- CTA -->
     <section class="cta">
       <div class="container">
-        <h2>试试在线演示</h2>
-        <p>通过交互式 Playground 了解 Pool.js 的工作原理</p>
-        <RouterLink to="/playground" class="btn btn-primary">
-          打开 Playground →
-        </RouterLink>
+        <h2>{{ $t('home.ctaTitle') }}</h2>
+        <p>{{ $t('home.ctaDesc') }}</p>
+        <NuxtLink :to="localePath('/playground')" class="btn btn-primary">
+          {{ $t('home.openPlaygroundBtn') }}
+        </NuxtLink>
       </div>
     </section>
   </div>
@@ -296,8 +321,13 @@ await wrapped('world')" />
 }
 
 .feature-icon {
-  font-size: 32px;
   margin-bottom: 12px;
+  color: #667eea;
+}
+
+.feature-icon :deep(svg) {
+  width: 32px;
+  height: 32px;
 }
 
 .feature-card h3 {

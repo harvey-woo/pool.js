@@ -1,8 +1,5 @@
 {
-  "buildCommand": "corepack yarn vite build",
-  "outputDirectory": "dist",
-  "installCommand": "corepack enable && corepack yarn install --immutable",
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
-  ]
+  "buildCommand": "corepack yarn nuxt build",
+  "outputDirectory": ".output",
+  "installCommand": "cd .. && corepack enable && corepack yarn install"
 }
