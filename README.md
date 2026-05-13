@@ -11,11 +11,10 @@
 A lightweight resource pool scheduler for JavaScript and TypeScript.
 Based on ES2024 Explicit Resource Management (`Symbol.dispose` / `Symbol.asyncDispose`).
 
-- [中文文档](#中文)
-- [English README](#english)
+- [中文文档](./README_CN.md)
+- [优雅完成高频面试题《请求并发数控制》](https://juejin.cn/post/7310009007921791003)
 - [Live Demo](https://pooljs.cat5th.com/playground)
 - [API Docs](https://pooljs.cat5th.com/docs)
-- [Blog: Implement Request Concurrency Control with Elegance](https://juejin.cn/post/7310009007921791003)
 
 
 ## Features

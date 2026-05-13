@@ -11,7 +11,7 @@
 一个基于资源池模式的轻量级资源调度器。
 采用 ES2024 显式资源管理方案（`Symbol.dispose` / `Symbol.asyncDispose`）。
 
-- [English README](#english)
+- [English](./README.md)
 - [在线演示](https://pooljs.cat5th.com/playground)
 - [API 文档](https://pooljs.cat5th.com/docs)
 - [优雅完成高频面试题《请求并发数控制》](https://juejin.cn/post/7310009007921791003)
