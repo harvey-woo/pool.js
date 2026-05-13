@@ -190,6 +190,7 @@
   },
   "taskCreator": {
     "title": "任务创建器",
+    "taskNamePrefix": "任务",
     "batchSizeLabel": "每批任务数量",
     "createBtn": "手动创建 {count} 个任务",
     "creatingBtn": "创建中...",

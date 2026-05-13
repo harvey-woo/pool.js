@@ -190,6 +190,7 @@
   },
   "taskCreator": {
     "title": "Task Creator",
+    "taskNamePrefix": "Task",
     "batchSizeLabel": "Batch Size",
     "createBtn": "Create {count} Tasks",
     "creatingBtn": "Creating...",

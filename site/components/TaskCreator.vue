@@ -3,6 +3,8 @@ import { ref, reactive, computed, onUnmounted } from 'vue'
 import type { Task } from '../utils/task-utils'
 import { createTask as _createTask } from '../utils/task-utils'
 
+const { t } = useI18n()
+
 // Props and Emits
 interface TaskCreatorProps {
   scheduler?: unknown
@@ -148,7 +150,7 @@ function createTask(): Task {
   const backgroundColor = getRandomColor()
   return _createTask(
     taskIdCounter,
-    `任务 ${taskIdCounter}`,
+    `${t('taskCreator.taskNamePrefix')} ${taskIdCounter}`,
     backgroundColor,
     getContrastColor(backgroundColor)
   )
